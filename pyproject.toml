@@ -34,6 +34,12 @@ dev = [
     "mypy>=1.9",
     "ruff>=0.4",
 ]
+# Optional HTTP surface (the v1 /prepare endpoint). Not needed for the engine,
+# the simulator, or the eval matrix — only to serve negotiation_agent.api:app.
+web = [
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+]
 
 [project.urls]
 Homepage = "https://github.com/eugnmueller-87/Negotiation-Agent"
@@ -60,6 +66,9 @@ addopts = "-q"
 [tool.coverage.run]
 branch = true
 source = ["negotiation_agent"]
+# The HTTP adapter needs the optional [web] extra to import; it's covered by its
+# own smoke test only when FastAPI is present, not in the core coverage gate.
+omit = ["*/negotiation_agent/api.py"]
 
 [tool.coverage.report]
 show_missing = true
@@ -72,6 +81,10 @@ strict = true
 warn_unused_ignores = true
 warn_redundant_casts = true
 files = ["src"]
+# The HTTP adapter type-checks only when the optional [web] extra is installed
+# (it imports FastAPI). CI runs mypy without that extra, so exclude it here; it is
+# checked in the web-extra job. The core stays strict-clean with zero web deps.
+exclude = ['src/negotiation_agent/api\.py']
 
 [tool.ruff]
 line-length = 100

@@ -61,6 +61,45 @@ header{display:flex;justify-content:space-between;align-items:center;padding:15p
 .startrow{margin-top:24px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
 .startrow .meta{font-size:12.5px;color:var(--ink-3);}
 
+/* prep tools (contract upload + supplier research) */
+.prep{margin-top:26px;border:1px solid var(--line);border-radius:12px;background:var(--surface-1);padding:16px 18px;}
+.prep-hd{display:flex;align-items:center;gap:9px;font-size:12.5px;font-weight:600;color:var(--ink-2);margin-bottom:4px;}
+.prep-hd .k{font-family:var(--mono);font-size:11px;color:var(--ink-3);font-weight:400;}
+.prep-sub{font-size:12px;color:var(--ink-3);margin-bottom:13px;line-height:1.5;}
+.prep-row{display:flex;gap:10px;flex-wrap:wrap;}
+.prep-note{margin-top:11px;font-size:11.5px;color:var(--good);display:none;}
+.prep-note.warn{color:var(--warn);}
+.prep-note.show{display:block;}
+
+/* supplier brief card */
+.brief{margin-top:14px;border:1px solid var(--line);border-left:3px solid var(--warn);border-radius:10px;background:var(--surface-2);padding:15px 17px;display:none;}
+.brief.show{display:block;}
+.brief-top{display:flex;align-items:center;gap:11px;flex-wrap:wrap;margin-bottom:9px;}
+.brief-top .co{font-size:14.5px;font-weight:650;}
+.brief-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;padding:2px 8px;border-radius:5px;background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn);}
+.brief-sample{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:var(--ink-3);border:1px dashed var(--line);padding:2px 8px;border-radius:5px;}
+.brief-sum{font-size:13px;color:var(--ink-2);line-height:1.55;margin-bottom:12px;}
+.brief-facts{display:grid;grid-template-columns:1fr 1fr;gap:7px 18px;font-size:12.5px;margin-bottom:12px;}
+.brief-facts .row{display:flex;justify-content:space-between;gap:10px;border-bottom:1px solid var(--line);padding-bottom:5px;}
+.brief-facts .row span{color:var(--ink-3);} .brief-facts .row b{color:var(--ink);font-weight:600;}
+.brief-facts .ok{color:var(--good);} .brief-facts .mon{color:var(--warn);}
+.brief-steps{font-size:12.5px;} .brief-steps .lab{font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);margin-bottom:6px;}
+.brief-steps div.s{color:var(--ink-2);padding:3px 0 3px 18px;position:relative;}
+.brief-steps div.s::before{content:"→";position:absolute;left:0;color:var(--warn);}
+@media(max-width:620px){.brief-facts{grid-template-columns:1fr;}}
+
+/* contract paste modal */
+.c-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;z-index:100;padding:32px 20px;}
+.c-overlay.show{display:flex;}
+.c-modal{background:var(--surface-1);border:1px solid var(--line);border-radius:14px;max-width:620px;width:100%;box-shadow:0 24px 70px rgba(0,0,0,.45);overflow:hidden;}
+.c-bar{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--line);}
+.c-bar b{font-size:15px;} .c-close{background:none;border:none;color:var(--ink-3);font-size:20px;line-height:1;padding:2px 6px;}
+.c-body{padding:16px 18px;}
+.c-body p{font-size:12.5px;color:var(--ink-3);margin:0 0 11px;line-height:1.5;}
+.c-ta{width:100%;min-height:190px;border:1px solid var(--line);border-radius:9px;background:var(--surface-2);color:var(--ink);font-family:var(--mono);font-size:12.5px;padding:11px 12px;resize:vertical;line-height:1.5;}
+.c-foot{display:flex;gap:10px;justify-content:flex-end;padding:14px 18px;border-top:1px solid var(--line);}
+.c-sample-link{margin-right:auto;background:none;border:none;color:var(--buyer);font-size:12.5px;text-decoration:underline;padding:0;}
+
 /* run */
 .run{max-width:1240px;margin:0 auto;padding:18px 20px 60px;}
 .transport{display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap;}
@@ -146,7 +185,7 @@ header{display:flex;justify-content:space-between;align-items:center;padding:15p
 </style>
 
 <header>
-  <div class="brand"><b>Peitho</b> <span>autonomous negotiation · self-play demo</span></div>
+  <button class="brand" id="homeBtn" title="Back to setup" style="background:none;border:none;padding:0;text-align:left;"><b>Peitho</b> <span>autonomous negotiation · self-play demo</span></button>
   <div class="hstatus" id="hstatus"><button class="theme" id="themeBtn">◐ Theme</button></div>
 </header>
 
@@ -233,6 +272,65 @@ function numericGuard(env, approved, text){
     if(!ok) violations.push(raw);
   }
   return { ok:violations.length===0, violations, approvedCount:forms.size };
+}
+
+/* ==========================================================================
+   2b. CONTRACT INTAKE — JS port of intake.py (RegexContractExtractor).
+       Reads an uploaded contract into the setup fields. Untrusted input:
+       capped, with bounded quantifiers, so a pathological doc stays linear.
+   ========================================================================== */
+const _MAX_CONTRACT_CHARS = 200000;
+const _PRICE_RE   = /(?:€|eur\s*)\s*([0-9]{1,12}(?:[.,][0-9]{1,6})?)|([0-9]{1,12}(?:[.,][0-9]{1,6})?)\s*(?:€|eur)(?!\w)/i;
+const _PAYMENT_RE = /\bnet[\s-]?([0-9]{1,3})|([0-9]{1,3})\s*days?\b/i;
+const _MONTHS_RE  = /([0-9]{1,3})\s*(?:month|months|mo)\b/i;
+const _SUPPLIER_RE= /(?:supplier|vendor|lieferant|seller)\s*[:\-]?\s*([A-Z][\w&.\- ]{2,60}?(?:GmbH|AG|Ltd|Inc|B\.V\.|S\.A\.|SE|KG))/i;
+
+function _num(m){
+  if(!m) return null;
+  const g=[...m].slice(1).find(x=>x);
+  if(!g) return null;
+  const raw = /^\d{1,3}(?:[.,]\d{3})+$/.test(g) ? g.replace(/[.,]/g,"") : null; // thousands
+  const val = raw!==null ? parseFloat(raw) : parseFloat(g.replace(",","."));
+  return Number.isFinite(val) ? val : null; // never emit inf from a long digit run
+}
+
+function extractContract(text){
+  const t=(text||"").slice(0, _MAX_CONTRACT_CHARS); // cap before any regex (ReDoS defense)
+  const found={};
+  const price=_num(t.match(_PRICE_RE));   if(price!=null) found.openingAsk=price;
+  const pay  =_num(t.match(_PAYMENT_RE)); if(pay!=null)   found.paymentDays=Math.round(pay);
+  const mon  =_num(t.match(_MONTHS_RE));  if(mon!=null)   found.contractMonths=Math.round(mon);
+  const sm=t.match(_SUPPLIER_RE);
+  const supplier = sm ? sm[1].trim() : null;
+  const warnings=[];
+  if(Object.keys(found).length===0) warnings.push("No negotiable terms recognised in the document.");
+  if(!supplier) warnings.push("No supplier legal name recognised — confirm before research.");
+  return { supplierName:supplier, terms:found, warnings };
+}
+
+/* ==========================================================================
+   2c. SUPPLIER RESEARCH — the sample brief (mirrors research.sample_brief()).
+       The browser CANNOT call Hades live: the API key can't ship client-side,
+       Hades has no CORS, and the artifact CSP blocks the request. So this is
+       the clearly-labelled sample the same shape a real investigation returns.
+       Live research is a v1 backend endpoint (see negotiation_agent/api.py).
+   ========================================================================== */
+function sampleBrief(company){
+  return {
+    company: company || "Nordwerk Verpackung GmbH",
+    riskScore: 3.4, riskLevel: "Medium", recommendation: "Conditional Approval",
+    executiveSummary: (company||"The supplier")+" presents a moderate overall risk. No sanctions matches "
+      + "were found and the company is an active registered entity, but recent news carries low-severity "
+      + "negative signals and LkSG monitoring is advised for the category.",
+    sanctioned: false, sanctionsNote: "No matches on OFAC SDN or UN Consolidated List.",
+    registryStatus: "active", lksgSignal: "needs_monitoring", esgRating: "neutral",
+    newsSentiment: "negative_low",
+    nextSteps: [
+      "Request the supplier's current LkSG risk-management declaration",
+      "Set a Hermes monitoring alert on the supplier ahead of contract signing",
+    ],
+    source: "sample",
+  };
 }
 
 /* ==========================================================================
@@ -353,7 +451,7 @@ const FORM={ supplierName:"Nordwerk Verpackung GmbH", contact:"vertrieb@nordwerk
   category:"Corrugated packaging — 12 mo supply", openingAsk:11.5, target:9.0, walkAway:10.5,
   contractMonths:24, paymentLever:60, persona:"aggressive" };
 
-const M={ phase:"setup", form:{...FORM}, sc:null, transcript:[], round:0, busy:false, status:"live", auto:false, showReason:true, error:null, lastMinutes:null };
+const M={ phase:"setup", form:{...FORM}, sc:null, transcript:[], round:0, busy:false, status:"live", auto:false, showReason:true, error:null, lastMinutes:null, brief:null };
 const RS={ lastSupplierOffer:null, roundIndex:0 }; // engine state
 const app=document.getElementById("app");
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -364,6 +462,9 @@ const $=(sel,root=document)=>root.querySelector(sel);
   let cur=mq.matches?"dark":"light"; const ap=t=>{document.documentElement.setAttribute("data-theme",t); b.textContent=(t==="dark"?"☾":"☀")+" Theme";};
   ap(cur); b.onclick=()=>{cur=(document.documentElement.getAttribute("data-theme")==="dark")?"light":"dark"; ap(cur);};
 })();
+
+/* home — always returns to the setup screen (keeps the form as-is) */
+$("#homeBtn").onclick=()=>{ if(M.phase!=="setup"){ M.phase="setup"; M.auto=false; M.busy=false; render(); } };
 
 function statusBadge(){
   const map={ live:{t:"negotiating",c:"var(--live)"}, closed:{t:"deal closed",c:"var(--good)"},
@@ -412,15 +513,77 @@ function setupView(){
         <div class="personas">${PERSONAS.map(p=>`<button type="button" class="persona${f.persona===p.id?" on":""}" data-p="${p.id}"><b>${p.label}</b><span>${p.hint}</span></button>`).join("")}</div>
       </div>
     </div>
+    <div class="prep">
+      <div class="prep-hd">Prepare the buyer <span class="k">— before the first message goes out</span></div>
+      <div class="prep-sub">Upload the current contract to pre-fill the opening position, and pull a due-diligence brief on the supplier. Research informs the human — it never feeds the engine, which decides only on the signed mandate.</div>
+      <div class="prep-row">
+        <button class="ghost" id="uploadBtn">📄 Upload contract</button>
+        <button class="ghost" id="researchBtn">🔍 Research supplier</button>
+      </div>
+      <div class="prep-note" id="prepNote"></div>
+      ${briefCard()}
+    </div>
     <div class="startrow">
       <button class="primary big" id="startBtn">Start the negotiation →</button>
       <span class="meta">buyer target €${(+f.target).toFixed(2)} · walk-away €${(+f.walkAway).toFixed(2)} · lever up to net-${f.paymentLever}</span>
+    </div>
+  </div>
+  ${contractModal()}`;
+}
+
+function briefCard(){
+  const b=M.brief; if(!b) return "";
+  const yn=(v,y,n)=>v?`<b class="ok">${y}</b>`:`<b class="mon">${n}</b>`;
+  return `<div class="brief show">
+    <div class="brief-top">
+      <span class="co">${esc(b.company)}</span>
+      <span class="brief-badge">${esc(b.riskLevel)} risk · ${b.riskScore.toFixed(1)}/10</span>
+      <span class="brief-sample">${b.source==="sample"?"sample — not a live Hades call":"live"}</span>
+    </div>
+    <div class="brief-sum">${esc(b.executiveSummary)}</div>
+    <div class="brief-facts">
+      <div class="row"><span>Recommendation</span><b>${esc(b.recommendation)}</b></div>
+      <div class="row"><span>Sanctions</span>${b.sanctioned?`<b class="mon">match — review</b>`:`<b class="ok">no match ✓</b>`}</div>
+      <div class="row"><span>Registry status</span><b class="ok">${esc(b.registryStatus)} ✓</b></div>
+      <div class="row"><span>LkSG / CSDDD</span><b class="mon">${esc(b.lksgSignal.replace(/_/g," "))}</b></div>
+      <div class="row"><span>ESG / labour</span><b>${esc(b.esgRating)}</b></div>
+      <div class="row"><span>News sentiment</span><b>${esc(b.newsSentiment.replace(/_/g," "))}</b></div>
+    </div>
+    <div class="brief-steps"><div class="lab">recommended next steps</div>
+      ${b.nextSteps.map(s=>`<div class="s">${esc(s)}</div>`).join("")}</div>
+  </div>`;
+}
+
+function contractModal(){
+  return `<div class="c-overlay" id="cOverlay">
+    <div class="c-modal" role="dialog" aria-label="Paste contract">
+      <div class="c-bar"><b>Upload contract</b><button class="c-close" id="cClose" aria-label="Close">×</button></div>
+      <div class="c-body">
+        <p>Paste the current contract text. The deterministic intake extractor reads the price, payment terms, and contract length to pre-fill the setup — it never invents a term it can't find.</p>
+        <textarea class="c-ta" id="cText" placeholder="Paste contract text here…"></textarea>
+      </div>
+      <div class="c-foot">
+        <button class="c-sample-link" id="cSample">load a sample contract</button>
+        <button class="ghost" id="cCancel">Cancel</button>
+        <button class="primary" id="cExtract">Extract &amp; pre-fill</button>
+      </div>
     </div>
   </div>`;
 }
 function field(label,note,input,wide){
   return `<div class="fld${wide?" wide":""}"><label>${label}${note?` <i>· ${note}</i>`:""}</label>${input}</div>`;
 }
+const SAMPLE_CONTRACT = `SUPPLY AGREEMENT
+
+Supplier: Nordwerk Verpackung GmbH
+Category: Corrugated packaging
+
+1. Price. The unit price shall be €11.50 per unit.
+2. Payment. Invoices are payable net-30 days from receipt.
+3. Term. This agreement runs for 24 months from the effective date.
+4. Volume. Minimum annual volume: 40,000 units.
+5. Rebate. A 2% rebate applies above the minimum volume.`;
+
 function bindSetup(){
   ["supplierName","contact","category","openingAsk","target","walkAway","contractMonths","paymentLever"].forEach(k=>{
     const el=$("#f-"+k); if(!el) return;
@@ -428,6 +591,30 @@ function bindSetup(){
   });
   app.querySelectorAll(".persona").forEach(b=>b.onclick=()=>{ M.form.persona=b.dataset.p; render(); });
   $("#startBtn").onclick=start;
+
+  // contract upload
+  const setNote=(msg,warn)=>{ const n=$("#prepNote"); if(!n) return; n.textContent=msg; n.className="prep-note show"+(warn?" warn":""); };
+  const ov=$("#cOverlay");
+  const openModal=()=>{ ov.classList.add("show"); const ta=$("#cText"); if(ta) ta.focus(); };
+  const closeModal=()=>ov.classList.remove("show");
+  $("#uploadBtn").onclick=openModal;
+  $("#cClose").onclick=closeModal; $("#cCancel").onclick=closeModal;
+  ov.onclick=e=>{ if(e.target===ov) closeModal(); };
+  $("#cSample").onclick=()=>{ $("#cText").value=SAMPLE_CONTRACT; };
+  $("#cExtract").onclick=()=>{
+    const res=extractContract($("#cText").value);
+    if(res.supplierName) M.form.supplierName=res.supplierName;
+    if(res.terms.openingAsk!=null)     M.form.openingAsk=res.terms.openingAsk;
+    if(res.terms.paymentDays!=null)    M.form.paymentLever=Math.max(M.form.paymentLever, res.terms.paymentDays);
+    if(res.terms.contractMonths!=null) M.form.contractMonths=res.terms.contractMonths;
+    const n=Object.keys(res.terms).length;
+    closeModal(); render();
+    setNote(n>0 ? `✓ Extracted ${n} term${n!==1?"s":""} from the contract — fields pre-filled.${res.warnings.length?" "+res.warnings.join(" "):""}`
+                : "No terms recognised in that text — fill the fields manually.", n===0);
+  };
+
+  // supplier research (sample brief — the browser can't call Hades live)
+  $("#researchBtn").onclick=()=>{ M.brief=sampleBrief(M.form.supplierName); render(); };
 }
 
 function start(){
