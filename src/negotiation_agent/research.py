@@ -27,12 +27,37 @@ import json
 import os
 import urllib.error
 import urllib.request
-from typing import Literal
+from typing import Any, Literal
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field
 
 DEFAULT_HADES_URL = "https://hades-production-b86a.up.railway.app"
 _TIMEOUT_SECONDS = 150  # Hades runs ~6 pipelines; a full investigation can take ~2 min.
+_MAX_RESPONSE_BYTES = 5 * 1024 * 1024  # a real brief is a few KB; cap hostile/large bodies
+_ALLOWED_SCHEMES = ("https",)  # never http/file/gopher — the key rides on this request
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Refuse every redirect.
+
+    urllib does NOT strip request headers when following a redirect, and a POST
+    follows 307/308 with body and headers intact — so a redirect on this
+    authenticated request would forward the ``X-API-Key`` header to the redirect
+    target (a compromised/stale host → key exfiltration). Refusing turns any
+    redirect into an HTTPError, which the caller maps to a clean failure.
+    """
+
+    def redirect_request(
+        self,
+        req: urllib.request.Request,
+        fp: Any,
+        code: int,
+        msg: str,
+        headers: Any,
+        newurl: str,
+    ) -> None:
+        raise urllib.error.HTTPError(req.full_url, code, "redirect refused", headers, fp)
 
 
 class ResearchUnavailable(Exception):
@@ -121,9 +146,13 @@ def brief_from_hades_response(payload: dict[str, object]) -> SupplierBrief:
 
 def _as_float(v: object) -> float | None:
     try:
-        return float(v) if isinstance(v, (int, float, str)) else None
-    except (TypeError, ValueError):
+        f = float(v) if isinstance(v, (int, float, str)) else None
+    except (TypeError, ValueError, OverflowError):
         return None
+    # Reject NaN and ±inf so they never reach risk_score (headline would show "nan/10").
+    if f is None or f != f or f in (float("inf"), float("-inf")):
+        return None
+    return f
 
 
 def _str(v: object) -> str | None:
@@ -154,6 +183,10 @@ class HadesClient:
         timeout: int = _TIMEOUT_SECONDS,
     ) -> None:
         self.base_url = (base_url or os.environ.get("HADES_URL", DEFAULT_HADES_URL)).rstrip("/")
+        # Pin the scheme: the API key rides on this request, so file://, gopher://,
+        # or a plain-http host are all unacceptable.
+        if urlsplit(self.base_url).scheme not in _ALLOWED_SCHEMES:
+            raise ResearchUnavailable("Supplier research is misconfigured (URL must be https).")
         self._api_key = api_key or os.environ.get("HADES_API_KEY", "")
         self.timeout = timeout
 
@@ -161,8 +194,8 @@ class HadesClient:
         """Run a due-diligence investigation and return a :class:`SupplierBrief`.
 
         Raises :class:`ResearchUnavailable` on any failure (missing key,
-        unreachable service, rate limit, timeout, malformed response) — always
-        with a message safe to show a buyer.
+        unreachable service, rate limit, timeout, redirect, oversized or malformed
+        response) — always with a message safe to show a buyer, never a traceback.
         """
         if not self._api_key:
             raise ResearchUnavailable(
@@ -181,9 +214,12 @@ class HadesClient:
                 "Accept": "application/json",
             },
         )
+        # A one-shot opener that refuses redirects (so the key can't be forwarded
+        # to a redirect target). https is already pinned in __init__.
+        opener = urllib.request.build_opener(_NoRedirect)
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:  # noqa: S310 (trusted host)
-                raw = resp.read()
+            with opener.open(req, timeout=self.timeout) as resp:  # noqa: S310 (https-pinned, no redirects)
+                raw = resp.read(_MAX_RESPONSE_BYTES + 1)
         except urllib.error.HTTPError as e:
             if e.code == 429:
                 raise ResearchUnavailable(
@@ -195,18 +231,27 @@ class HadesClient:
                 ) from None
             # Never surface the upstream error body — it can leak internals.
             raise ResearchUnavailable(f"Supplier research failed (status {e.code}).") from None
-        except (urllib.error.URLError, TimeoutError):
+        except (urllib.error.URLError, TimeoutError, ValueError):
             raise ResearchUnavailable(
                 "Supplier research service is unreachable right now."
             ) from None
 
+        if len(raw) > _MAX_RESPONSE_BYTES:
+            raise ResearchUnavailable("Supplier research returned an oversized response.")
+
+        # The response is untrusted JSON. Guard every way it can be hostile:
+        # unreadable (JSONDecodeError), non-object top-level (ValueError we raise),
+        # pathologically nested (RecursionError), or an over-large number in a
+        # scored field (ArithmeticError). None may escape as a traceback.
         try:
             payload = json.loads(raw)
-        except json.JSONDecodeError:
+            if not isinstance(payload, dict):
+                raise ValueError("payload is not a JSON object")
+            return brief_from_hades_response(payload)
+        except (json.JSONDecodeError, ValueError, RecursionError, ArithmeticError):
             raise ResearchUnavailable(
                 "Supplier research returned an unreadable response."
             ) from None
-        return brief_from_hades_response(payload)
 
 
 def sample_brief(company: str = "Nordwerk Verpackung GmbH") -> SupplierBrief:

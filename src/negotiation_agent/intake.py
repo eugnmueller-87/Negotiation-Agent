@@ -73,15 +73,22 @@ class ContractExtractor(Protocol):
     def extract(self, contract_text: str) -> ContractExtraction: ...
 
 
+# Contract text is untrusted (upload / injection surface). Cap the input so no
+# regex can be driven quadratic by a pathological megabyte of digits, and bound
+# every numeric quantifier so a single token stays linear. Real figures are short.
+_MAX_CONTRACT_CHARS = 200_000  # ~200 KB of text; real contracts are far smaller
+
 # Term-name → the units/patterns we recognise in a contract. Kept as data so the
 # regex stub and the LLM prompt (v1) share one vocabulary.
 _PRICE_RE = re.compile(
-    r"(?:€|eur\s*)\s*([0-9]+(?:[.,][0-9]+)?)|([0-9]+(?:[.,][0-9]+)?)\s*(?:€|eur)\b", re.I
+    r"(?:€|eur\s*)\s*([0-9]{1,12}(?:[.,][0-9]{1,6})?)"
+    r"|([0-9]{1,12}(?:[.,][0-9]{1,6})?)\s*(?:€|eur)(?!\w)",
+    re.I,
 )
-_PAYMENT_RE = re.compile(r"net[\s-]?([0-9]{1,3})|([0-9]{1,3})\s*days?\b", re.I)
+_PAYMENT_RE = re.compile(r"\bnet[\s-]?([0-9]{1,3})|([0-9]{1,3})\s*days?\b", re.I)
 _MONTHS_RE = re.compile(r"([0-9]{1,3})\s*(?:month|months|mo)\b", re.I)
-_VOLUME_RE = re.compile(r"([0-9][0-9.,]{2,})\s*(?:units|pcs|pieces|stück)\b", re.I)
-_REBATE_RE = re.compile(r"([0-9]+(?:[.,][0-9]+)?)\s*%\s*(?:rebate|discount|rabatt)", re.I)
+_VOLUME_RE = re.compile(r"([0-9][0-9.,]{1,15})\s*(?:units|pcs|pieces|stück)\b", re.I)
+_REBATE_RE = re.compile(r"([0-9]{1,6}(?:[.,][0-9]{1,4})?)\s*%\s*(?:rebate|discount|rabatt)", re.I)
 _SUPPLIER_RE = re.compile(
     r"(?:supplier|vendor|lieferant|seller)\s*[:\-]?\s*"
     r"([A-Z][\w&.\- ]{2,60}?(?:GmbH|AG|Ltd|Inc|B\.V\.|S\.A\.|SE|KG))",
@@ -103,10 +110,10 @@ def _num(m: re.Match[str] | None) -> float | None:
     if not g:
         return None
     # thousands: 40,000 or 40.000 (sep + exactly 3 trailing digits, whole number)
-    if re.fullmatch(r"\d{1,3}(?:[.,]\d{3})+", g):
-        return float(g.replace(".", "").replace(",", ""))
-    # otherwise the separator is a decimal point
-    return float(g.replace(",", "."))
+    raw = g.replace(".", "").replace(",", "") if re.fullmatch(r"\d{1,3}(?:[.,]\d{3})+", g) else None
+    val = float(raw) if raw is not None else float(g.replace(",", "."))
+    # A pathological long digit run can float() to inf; never emit a non-finite value.
+    return val if val == val and val not in (float("inf"), float("-inf")) else None
 
 
 class RegexContractExtractor:
@@ -119,7 +126,8 @@ class RegexContractExtractor:
     """
 
     def extract(self, contract_text: str) -> ContractExtraction:
-        text = contract_text or ""
+        # Cap untrusted input before any regex runs (ReDoS defense-in-depth).
+        text = (contract_text or "")[:_MAX_CONTRACT_CHARS]
         terms: list[ExtractedTerm] = []
 
         def add(name: str, pattern: re.Pattern[str]) -> None:
