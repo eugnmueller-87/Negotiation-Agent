@@ -1,0 +1,81 @@
+{
+  "company": "Nordwerk Verpackung GmbH",
+  "report": {
+    "report_date": "2026-07-09",
+    "company": "Nordwerk Verpackung GmbH",
+    "category": "Corrugated packaging",
+    "country": "DE",
+    "overall_risk_score": 3.4,
+    "risk_level": "Medium",
+    "recommendation": "Conditional Approval",
+    "executive_summary": "Nordwerk Verpackung GmbH presents a moderate overall risk. No sanctions matches were found and the company is an active registered entity, though recent news carries low-severity negative signals and LkSG monitoring is advised for this category.",
+    "company_overview": {
+      "legal_name": "Nordwerk Verpackung GmbH",
+      "hrb": "HRB 128374",
+      "amtsgericht": "Amtsgericht Hamburg",
+      "legal_address": "Industriestrasse 12, 20537 Hamburg",
+      "company_status": "active",
+      "jurisdiction": "DE"
+    },
+    "sanctions_status": {
+      "is_sanctioned": false,
+      "priority_hit": false,
+      "datasets_matched": [],
+      "summary": "No matches on OFAC SDN or the UN Consolidated List. EU FSF flagged for manual check.",
+      "manual_review_required": false
+    },
+    "news_sentiment": {
+      "sentiment": "negative_low",
+      "total_articles": 7,
+      "negative_count": 2,
+      "high_severity_count": 0,
+      "notable_headlines": [
+        "Packaging sector faces raw-material cost pressure",
+        "Nordwerk expands Hamburg facility"
+      ],
+      "summary": "Coverage is largely neutral with two low-severity negative items on sector cost pressure."
+    },
+    "lksg_csddd_assessment": {
+      "compliance_signal": "needs_monitoring",
+      "flagged_count": 1,
+      "bafa_findings": "None found",
+      "ncp_complaints": "None found",
+      "ngo_reports": "One minor supply-chain transparency mention",
+      "conclusion": "Needs Monitoring",
+      "summary": "No BAFA or OECD NCP actions. A single NGO transparency mention warrants routine monitoring, not escalation."
+    },
+    "esg_labour": {
+      "esg_rating": "neutral",
+      "negative_count": 0,
+      "positive_count": 1,
+      "key_findings": ["No labour-rights violations found", "Holds ISO 14001 certification"]
+    },
+    "dimension_scores": {
+      "sanctions": {"score": 1, "weight": "25%", "rationale": "No sanctions exposure."},
+      "registry": {"score": 2, "weight": "15%", "rationale": "Active, clean registry status."},
+      "news_sentiment": {"score": 4, "weight": "15%", "rationale": "Low-severity negative coverage."},
+      "lksg_csddd": {"score": 5, "weight": "20%", "rationale": "One NGO mention; monitoring advised."},
+      "esg_labour": {"score": 3, "weight": "15%", "rationale": "Neutral ESG profile."},
+      "hermes_intelligence": {"score": 4, "weight": "10%", "rationale": "No adverse market signals."}
+    },
+    "required_next_steps": [
+      "Request the supplier's current LkSG risk-management declaration",
+      "Set a Hermes monitoring alert on the supplier ahead of contract signing"
+    ]
+  },
+  "risk_scores": {
+    "overall_risk_score": 3.4,
+    "risk_level": "Medium",
+    "recommendation": "Conditional Approval",
+    "_decided_by": "deterministic",
+    "dimension_scores": {
+      "sanctions": 1,
+      "registry": 2,
+      "news_sentiment": 4,
+      "lksg_csddd": 5,
+      "esg_labour": 3,
+      "hermes_intelligence": 4
+    }
+  },
+  "hermes_registered": true
+}
