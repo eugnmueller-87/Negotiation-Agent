@@ -246,11 +246,12 @@ linear-additive utility model, which is what makes the audit replay exact.
 
 - **v0 (this repo)** — envelope schema, engine, baseline, simulator, evals. Pure
   Python, CI-gated. ✅
-- **v1** — FastAPI + Postgres, React magic-link chat portal, buyer dashboard. LLM
-  extractor (Pydantic + per-field confidence), intent classifier, reply composer
-  behind the numeric guard, prompt-injection red-team suite.
-- **v2** — DocuSign close, n8n email channel, German/English switching, Art. 50
-  AI-disclosure banner.
+- **v1** — negotiate with a real human supplier over email/chat. LLM extractor
+  (Pydantic + per-field confidence), intent classifier, reply composer behind the
+  numeric guard, prompt-injection red-team suite; FastAPI + Postgres, autonomous
+  close within envelope. **Full design:
+  [docs/v1-architecture.md](docs/v1-architecture.md).**
+- **v2** — DocuSign close, chat channel, buyer dashboard, Art. 50 AI-disclosure banner.
 
 **v1 seams already in place:** `SupplierAgent` protocol (a Claude-backed supplier
 drops in behind `respond()`), `SupplierModel.from_intents()` (the classifier's
