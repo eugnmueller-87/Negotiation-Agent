@@ -117,7 +117,7 @@ def fill_package(
         if not term.is_integer:
             continue
         x = linear_inverse(v[term.name], best=term.best, worst=term.worst)
-        x_snapped = _snap_toward_best(x, term)
+        x_snapped = snap_toward_best(x, term)
         v[term.name] = term.value(x_snapped)
         x_final[term.name] = x_snapped
         integer_utility += term.weight * v[term.name]
@@ -131,16 +131,14 @@ def fill_package(
         v_cont = _greedy_fill(continuous, leftover, caps)
         for term in continuous:
             v[term.name] = v_cont[term.name]
-            x_final[term.name] = linear_inverse(
-                v_cont[term.name], best=term.best, worst=term.worst
-            )
+            x_final[term.name] = linear_inverse(v_cont[term.name], best=term.best, worst=term.worst)
 
     offer = Offer(terms={t.name: x_final[t.name] for t in envelope.terms})
     realized = envelope.utility(offer)
     return offer, realized, v
 
 
-def _snap_toward_best(x: float, term: TermSpec) -> float:
+def snap_toward_best(x: float, term: TermSpec) -> float:
     """Round ``x`` to the integer on the ``best`` side, then clamp to span.
 
     Snapping toward ``best`` guarantees the realized utility contribution is

@@ -9,11 +9,13 @@ should show materially higher supplier utility than price-splitting would.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from statistics import mean, median
 
 from pydantic import BaseModel, Field
 
 from negotiation_agent.engine import DealEngine, EngineConfig
+from negotiation_agent.envelope import Envelope, Offer
 from negotiation_agent.simulator.loop import NegotiationResult, run_negotiation
 from negotiation_agent.simulator.scenarios import Scenario
 from negotiation_agent.simulator.supplier import ParametricSupplier
@@ -142,14 +144,15 @@ def run_batch(
     return metrics, aggregate(metrics)
 
 
-def _group(items, key):
-    buckets: dict[str, list] = {}
+def _group(
+    items: list[NegotiationMetrics], key: Callable[[NegotiationMetrics], str]
+) -> dict[str, BatchMetrics]:
+    buckets: dict[str, list[NegotiationMetrics]] = {}
     for m in items:
         buckets.setdefault(key(m), []).append(m)
     return {k: aggregate(v, _top=False) for k, v in sorted(buckets.items())}
 
 
-def _project(terms: dict[str, float], envelope) -> object:
-    from negotiation_agent.envelope import Offer
-
+def _project(terms: dict[str, float], envelope: Envelope) -> Offer:
+    """Restrict a deal to an envelope's terms, filling gaps from its floor."""
     return Offer(terms={n: terms.get(n, envelope.term_map[n].worst) for n in envelope.term_map})

@@ -37,19 +37,39 @@ def test_value_function_rejects_degenerate():
 def test_termspec_direction_validation():
     with pytest.raises(ValueError):
         # MINIMIZE requires best < worst.
-        TermSpec(name="p", term_type=TermType.PRICE, direction=Direction.MINIMIZE,
-                 best=12.0, worst=9.0, weight=1.0)
+        TermSpec(
+            name="p",
+            term_type=TermType.PRICE,
+            direction=Direction.MINIMIZE,
+            best=12.0,
+            worst=9.0,
+            weight=1.0,
+        )
 
 
 def test_envelope_weights_must_sum_to_one():
     with pytest.raises(ValueError):
         Envelope(
-            negotiation_id="x", version=1, signed_by="t",
+            negotiation_id="x",
+            version=1,
+            signed_by="t",
             terms=[
-                TermSpec(name="a", term_type=TermType.PRICE, direction=Direction.MINIMIZE,
-                         best=9.0, worst=12.0, weight=0.5),
-                TermSpec(name="b", term_type=TermType.REBATE_PCT, direction=Direction.MAXIMIZE,
-                         best=8.0, worst=0.0, weight=0.4),
+                TermSpec(
+                    name="a",
+                    term_type=TermType.PRICE,
+                    direction=Direction.MINIMIZE,
+                    best=9.0,
+                    worst=12.0,
+                    weight=0.5,
+                ),
+                TermSpec(
+                    name="b",
+                    term_type=TermType.REBATE_PCT,
+                    direction=Direction.MAXIMIZE,
+                    best=8.0,
+                    worst=0.0,
+                    weight=0.4,
+                ),
             ],
         )
 
@@ -57,10 +77,21 @@ def test_envelope_weights_must_sum_to_one():
 def test_envelope_reservation_below_target():
     with pytest.raises(ValueError):
         Envelope(
-            negotiation_id="x", version=1, signed_by="t",
-            target_utility=0.5, reservation_utility=0.6,
-            terms=[TermSpec(name="a", term_type=TermType.PRICE, direction=Direction.MINIMIZE,
-                            best=9.0, worst=12.0, weight=1.0)],
+            negotiation_id="x",
+            version=1,
+            signed_by="t",
+            target_utility=0.5,
+            reservation_utility=0.6,
+            terms=[
+                TermSpec(
+                    name="a",
+                    term_type=TermType.PRICE,
+                    direction=Direction.MINIMIZE,
+                    best=9.0,
+                    worst=12.0,
+                    weight=1.0,
+                )
+            ],
         )
 
 

@@ -22,8 +22,9 @@ class PersonaConfig(BaseModel):
     walkaway_at_deadline: bool
 
 
-# Concedes almost nothing until the very end, accepts only at/above its schedule,
-# walks if the deadline passes without a deal.
+# Procurement archetype: the sole-source holdout / Boulware hardball. Concedes
+# almost nothing until the very end (β_s=10), accepts only at/above its schedule,
+# and walks if the deadline passes without a deal — it has leverage and knows it.
 AGGRESSIVE = PersonaConfig(
     name="aggressive",
     beta_s=10.0,
@@ -33,7 +34,10 @@ AGGRESSIVE = PersonaConfig(
     walkaway_at_deadline=True,
 )
 
-# Concedes early (beta<1), accepts a little below its own schedule, never walks.
+# Procurement archetype: the challenger buying the logo / a Conceder. Wants the
+# account, so it concedes early (β_s<1), accepts a little below its own schedule,
+# and never walks. Closes fast — which is why belief quality barely moves its joint
+# utility in the eval.
 COOPERATIVE = PersonaConfig(
     name="cooperative",
     beta_s=0.6,
@@ -43,8 +47,9 @@ COOPERATIVE = PersonaConfig(
     walkaway_at_deadline=False,
 )
 
-# Holds firm and repeats its offer on non-multiple rounds (the stall), letting
-# the engine's stall guard eventually fire.
+# Procurement archetype: stall-to-deadline time pressure. Holds firm (β_s=6) and
+# repeats its offer on non-multiple rounds (the stall), letting the engine's stall
+# guard eventually fire — the tactic that should trigger a human hand-off.
 EVASIVE = PersonaConfig(
     name="evasive",
     beta_s=6.0,

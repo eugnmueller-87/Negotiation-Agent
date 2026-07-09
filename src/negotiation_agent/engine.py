@@ -104,7 +104,7 @@ class DealEngine:
         t = min(max(round_index, 0), cfg.max_rounds)
         frac = t / cfg.max_rounds
         span = env.target_utility - env.reservation_utility
-        return env.reservation_utility + span * (1.0 - frac**cfg.beta)
+        return float(env.reservation_utility + span * (1.0 - frac**cfg.beta))
 
     # ---- Decision ----------------------------------------------------------
 
@@ -228,14 +228,14 @@ class DealEngine:
         except InfeasiblePackage:
             # Caps have ratcheted below what theta needs — nothing legal left to offer.
             return (
-                self._escalate(state.round_index, theta, reason="no_feasible_counter",
-                               incoming_utility=u_in),
+                self._escalate(
+                    state.round_index, theta, reason="no_feasible_counter", incoming_utility=u_in
+                ),
                 state,
             )
 
         new_caps = {
-            name: min(state.concession_caps.get(name, 1.0), planned_v[name])
-            for name in planned_v
+            name: min(state.concession_caps.get(name, 1.0), planned_v[name]) for name in planned_v
         }
         decision = EngineDecision(
             outcome=Outcome.COUNTER,

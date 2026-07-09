@@ -25,9 +25,13 @@ def test_negotiation_terminates_and_is_bounded():
     engine = DealEngine(sc.buyer_envelope, sc.belief, cfg)
     supplier = ParametricSupplier(sc.supplier_envelope, sc.persona)
     result = run_negotiation(
-        sc.buyer_envelope, engine, supplier,
+        sc.buyer_envelope,
+        engine,
+        supplier,
         supplier_envelope=sc.supplier_envelope,
-        persona_name=sc.persona.name, belief_source=sc.belief_source, config=cfg,
+        persona_name=sc.persona.name,
+        belief_source=sc.belief_source,
+        config=cfg,
     )
     assert result.status in ("closed_engine", "closed_supplier", "escalated", "walked")
     assert len(result.transcript.turns) <= 2 * cfg.max_rounds + 3
@@ -35,15 +39,22 @@ def test_negotiation_terminates_and_is_bounded():
 
 def test_cooperative_persona_closes():
     # Cooperative supplier + oracle belief should reliably close.
-    sc = next(s for s in reference_matrix() if s.persona.name == "cooperative"
-              and s.belief_source == "oracle")
+    sc = next(
+        s
+        for s in reference_matrix()
+        if s.persona.name == "cooperative" and s.belief_source == "oracle"
+    )
     cfg = EngineConfig()
     engine = DealEngine(sc.buyer_envelope, sc.belief, cfg)
     supplier = ParametricSupplier(sc.supplier_envelope, sc.persona)
     result = run_negotiation(
-        sc.buyer_envelope, engine, supplier,
+        sc.buyer_envelope,
+        engine,
+        supplier,
         supplier_envelope=sc.supplier_envelope,
-        persona_name=sc.persona.name, belief_source=sc.belief_source, config=cfg,
+        persona_name=sc.persona.name,
+        belief_source=sc.belief_source,
+        config=cfg,
     )
     assert result.status in ("closed_engine", "closed_supplier")
     m = compute(result, sc)
@@ -52,8 +63,14 @@ def test_cooperative_persona_closes():
 
 
 def test_oracle_belief_beats_inverted_on_joint_utility():
-    """The logrolling proof: correct belief captures more joint utility than
-    worst-case misclassification, aggregated across closed cooperative deals."""
+    """End-to-end sanity: at the negotiation level, an oracle belief captures at
+    least as much joint utility as worst-case misclassification.
+
+    This is a WEAK check by design — full-loop joint utility is confounded by each
+    persona's own acceptance timing (a supplier can accept early and cap the joint
+    value either way). The clean, un-confounded proof that logrolling beats price-
+    splitting at matched buyer cost lives in test_baseline.py; this only guards
+    against belief quality actively *hurting* the negotiation outcome."""
     scenarios = reference_matrix()
     cfg = EngineConfig()
 
@@ -63,10 +80,7 @@ def test_oracle_belief_beats_inverted_on_joint_utility():
         joints = [m.joint_utility for m in metrics if m.closed and m.joint_utility is not None]
         return sum(joints) / len(joints) if joints else 0.0
 
-    oracle = joint_for("oracle")
-    inverted = joint_for("inverted")
-    # Oracle should not be worse than inverted on joint welfare of closed deals.
-    assert oracle >= inverted - 1e-9
+    assert joint_for("oracle") >= joint_for("inverted") - 1e-9
 
 
 def test_batch_metrics_shapes():

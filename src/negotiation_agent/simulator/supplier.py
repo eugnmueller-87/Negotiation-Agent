@@ -31,7 +31,16 @@ class SupplierMove(BaseModel):
 
 
 class SupplierAgent(Protocol):
-    def respond(self, round_index: int, buyer_offer: Offer) -> SupplierMove: ...
+    def respond(
+        self, round_index: int, buyer_offer: Offer | None, *, max_rounds: int = 8
+    ) -> SupplierMove:
+        """React to the buyer's standing package.
+
+        ``buyer_offer`` is the engine's last counter (``None`` only if the engine
+        somehow opened with no offer, which the loop never does). The v1
+        Claude-backed supplier implements exactly this signature.
+        """
+        ...
 
 
 class ParametricSupplier:
@@ -61,11 +70,14 @@ class ParametricSupplier:
         t = min(max(round_index, 0), max_rounds)
         frac = t / max_rounds
         span = env.target_utility - env.reservation_utility
-        return env.reservation_utility + span * (1.0 - frac**p.beta_s)
+        return float(env.reservation_utility + span * (1.0 - frac**p.beta_s))
 
     def respond(
-        self, round_index: int, buyer_offer: Offer, *, max_rounds: int = 8
+        self, round_index: int, buyer_offer: Offer | None, *, max_rounds: int = 8
     ) -> SupplierMove:
+        # With no buyer offer on the table there is nothing to react to; hold.
+        if buyer_offer is None:
+            return SupplierMove(kind="offer", offer=self._last_offer)
         # Supplier utility of the buyer's package under the hidden envelope.
         u_s = self.envelope.utility(self._project(buyer_offer))
         theta_s = self._threshold(round_index, max_rounds)
@@ -88,8 +100,12 @@ class ParametricSupplier:
             offer, _, planned_v = fill_package(
                 self.envelope, target, self._priorities, caps=self._caps or None
             )
-        except InfeasiblePackage:
-            # Can't reach its own schedule any more: hold last, or walk at deadline.
+        except InfeasiblePackage:  # pragma: no cover - defensive
+            # Unreachable for the v0 personas: a supplier targets at least its own
+            # reservation, and its caps never ratchet below that, so fill_package
+            # always finds a package. Kept so a v1 belief-updating supplier degrades
+            # gracefully (hold last offer, or walk at the deadline) instead of
+            # crashing mid-negotiation.
             if self._last_offer is not None:
                 return SupplierMove(kind="offer", offer=self._last_offer)
             if self.persona.walkaway_at_deadline and round_index >= max_rounds:

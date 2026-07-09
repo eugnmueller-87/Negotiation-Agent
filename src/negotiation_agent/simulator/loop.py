@@ -19,6 +19,11 @@ from negotiation_agent.engine import DealEngine, EngineConfig, NegotiationState,
 from negotiation_agent.envelope import Envelope, Offer
 from negotiation_agent.simulator.supplier import SupplierAgent
 
+# The four terminal states of a negotiation. One alias, used everywhere, so the
+# status never widens to plain `str` and mypy proves each call site passes a
+# valid literal.
+Status = Literal["closed_engine", "closed_supplier", "escalated", "walked"]
+
 
 class Turn(BaseModel):
     model_config = {"frozen": True}
@@ -48,7 +53,7 @@ class NegotiationResult(BaseModel):
     model_config = {"frozen": True}
 
     transcript: Transcript
-    status: Literal["closed_engine", "closed_supplier", "escalated", "walked"]
+    status: Status
     final_deal: Offer | None = None
     escalation_reason: str | None = None
     rounds_used: int = 0
@@ -128,13 +133,25 @@ def run_negotiation(
 
         if move.kind == "accept":
             return _result(
-                turns, "closed_supplier", standing_counter, None, state.round_index,
-                buyer_envelope, persona_name, belief_source,
+                turns,
+                "closed_supplier",
+                standing_counter,
+                None,
+                state.round_index,
+                buyer_envelope,
+                persona_name,
+                belief_source,
             )
         if move.kind == "reject":
             return _result(
-                turns, "walked", None, None, state.round_index,
-                buyer_envelope, persona_name, belief_source,
+                turns,
+                "walked",
+                None,
+                None,
+                state.round_index,
+                buyer_envelope,
+                persona_name,
+                belief_source,
             )
 
         # Supplier countered -> engine responds.
@@ -169,20 +186,39 @@ def run_negotiation(
 
         if decision.outcome is Outcome.ACCEPT:
             return _result(
-                turns, "closed_engine", merged, None, decision.round_index,
-                buyer_envelope, persona_name, belief_source,
+                turns,
+                "closed_engine",
+                merged,
+                None,
+                decision.round_index,
+                buyer_envelope,
+                persona_name,
+                belief_source,
             )
         if decision.outcome is Outcome.ESCALATE:
             return _result(
-                turns, "escalated", None, decision.reason, decision.round_index,
-                buyer_envelope, persona_name, belief_source,
+                turns,
+                "escalated",
+                None,
+                decision.reason,
+                decision.round_index,
+                buyer_envelope,
+                persona_name,
+                belief_source,
             )
         standing_counter = decision.counter
 
-    # Structurally unreachable (bounded above); escalate defensively.
-    return _result(
-        turns, "escalated", None, "loop_bound_exceeded", state.round_index,
-        buyer_envelope, persona_name, belief_source,
+    # Structurally unreachable: the engine escalates at t == max_rounds, which
+    # the loop's 2*T+2 iteration bound always reaches first. Kept as a backstop.
+    return _result(  # pragma: no cover - defensive
+        turns,
+        "escalated",
+        None,
+        "loop_bound_exceeded",
+        state.round_index,
+        buyer_envelope,
+        persona_name,
+        belief_source,
     )
 
 
@@ -192,16 +228,13 @@ def _merge_for_score(envelope: Envelope, offer: Offer | None, standing: Offer | 
     base = standing.terms if standing is not None else {}
     src = offer.terms if offer is not None else {}
     return Offer(
-        terms={
-            n: src.get(n, base.get(n, envelope.term_map[n].worst))
-            for n in envelope.term_map
-        }
+        terms={n: src.get(n, base.get(n, envelope.term_map[n].worst)) for n in envelope.term_map}
     )
 
 
 def _result(
     turns: list[Turn],
-    status: str,
+    status: Status,
     deal: Offer | None,
     reason: str | None,
     rounds: int,
@@ -218,7 +251,7 @@ def _result(
     )
     return NegotiationResult(
         transcript=transcript,
-        status=status,  # type: ignore[arg-type]
+        status=status,
         final_deal=deal,
         escalation_reason=reason,
         rounds_used=rounds,

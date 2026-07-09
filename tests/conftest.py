@@ -17,10 +17,22 @@ def simple_envelope() -> Envelope:
         target_utility=0.95,
         reservation_utility=0.55,
         terms=[
-            TermSpec(name="price", term_type=TermType.PRICE, direction=Direction.MINIMIZE,
-                     best=9.0, worst=12.0, weight=0.7),
-            TermSpec(name="rebate_pct", term_type=TermType.REBATE_PCT,
-                     direction=Direction.MAXIMIZE, best=8.0, worst=0.0, weight=0.3),
+            TermSpec(
+                name="price",
+                term_type=TermType.PRICE,
+                direction=Direction.MINIMIZE,
+                best=9.0,
+                worst=12.0,
+                weight=0.7,
+            ),
+            TermSpec(
+                name="rebate_pct",
+                term_type=TermType.REBATE_PCT,
+                direction=Direction.MAXIMIZE,
+                best=8.0,
+                worst=0.0,
+                weight=0.3,
+            ),
         ],
     )
 
@@ -35,11 +47,29 @@ def mixed_envelope() -> Envelope:
         target_utility=0.95,
         reservation_utility=0.55,
         terms=[
-            TermSpec(name="price", term_type=TermType.PRICE, direction=Direction.MINIMIZE,
-                     best=9.0, worst=12.0, weight=0.4),
-            TermSpec(name="payment_days", term_type=TermType.PAYMENT_DAYS,
-                     direction=Direction.MAXIMIZE, best=90, worst=30, weight=0.3),
-            TermSpec(name="volume_units", term_type=TermType.VOLUME_UNITS,
-                     direction=Direction.MINIMIZE, best=10000, worst=50000, weight=0.3),
+            TermSpec(
+                name="price",
+                term_type=TermType.PRICE,
+                direction=Direction.MINIMIZE,
+                best=9.0,
+                worst=12.0,
+                weight=0.4,
+            ),
+            TermSpec(
+                name="payment_days",
+                term_type=TermType.PAYMENT_DAYS,
+                direction=Direction.MAXIMIZE,
+                best=90,
+                worst=30,
+                weight=0.3,
+            ),
+            TermSpec(
+                name="volume_units",
+                term_type=TermType.VOLUME_UNITS,
+                direction=Direction.MINIMIZE,
+                best=10000,
+                worst=50000,
+                weight=0.3,
+            ),
         ],
     )

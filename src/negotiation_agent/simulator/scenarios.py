@@ -34,7 +34,7 @@ class Scenario(BaseModel):
     belief: SupplierModel  # what the engine is told
     belief_source: str
 
-    def model_post_init(self, _ctx) -> None:
+    def model_post_init(self, _ctx: object) -> None:
         b = set(self.buyer_envelope.term_map)
         s = set(self.supplier_envelope.term_map)
         if b != s:
@@ -68,6 +68,7 @@ def _true_priorities(supplier_env: Envelope) -> dict[str, float]:
 # cash flow (payment days) and volume certainty — exactly the logrolling setup.
 # --------------------------------------------------------------------------- #
 
+
 def _buyer_envelope() -> Envelope:
     return Envelope(
         negotiation_id="ref-widget-supply",
@@ -77,16 +78,46 @@ def _buyer_envelope() -> Envelope:
         reservation_utility=0.55,
         terms=[
             # Buyer cares most about price, barely about term length.
-            TermSpec(name="price", term_type=TermType.PRICE, direction=Direction.MINIMIZE,
-                     best=9.0, worst=12.0, weight=0.45),
-            TermSpec(name="payment_days", term_type=TermType.PAYMENT_DAYS,
-                     direction=Direction.MAXIMIZE, best=90, worst=30, weight=0.15),
-            TermSpec(name="contract_months", term_type=TermType.CONTRACT_MONTHS,
-                     direction=Direction.MINIMIZE, best=12, worst=36, weight=0.10),
-            TermSpec(name="volume_units", term_type=TermType.VOLUME_UNITS,
-                     direction=Direction.MINIMIZE, best=10000, worst=50000, weight=0.10),
-            TermSpec(name="rebate_pct", term_type=TermType.REBATE_PCT,
-                     direction=Direction.MAXIMIZE, best=8.0, worst=0.0, weight=0.20),
+            TermSpec(
+                name="price",
+                term_type=TermType.PRICE,
+                direction=Direction.MINIMIZE,
+                best=9.0,
+                worst=12.0,
+                weight=0.45,
+            ),
+            TermSpec(
+                name="payment_days",
+                term_type=TermType.PAYMENT_DAYS,
+                direction=Direction.MAXIMIZE,
+                best=90,
+                worst=30,
+                weight=0.15,
+            ),
+            TermSpec(
+                name="contract_months",
+                term_type=TermType.CONTRACT_MONTHS,
+                direction=Direction.MINIMIZE,
+                best=12,
+                worst=36,
+                weight=0.10,
+            ),
+            TermSpec(
+                name="volume_units",
+                term_type=TermType.VOLUME_UNITS,
+                direction=Direction.MINIMIZE,
+                best=10000,
+                worst=50000,
+                weight=0.10,
+            ),
+            TermSpec(
+                name="rebate_pct",
+                term_type=TermType.REBATE_PCT,
+                direction=Direction.MAXIMIZE,
+                best=8.0,
+                worst=0.0,
+                weight=0.20,
+            ),
         ],
     )
 
@@ -101,16 +132,46 @@ def _supplier_envelope() -> Envelope:
         target_utility=0.92,
         reservation_utility=0.50,
         terms=[
-            TermSpec(name="price", term_type=TermType.PRICE, direction=Direction.MAXIMIZE,
-                     best=12.0, worst=9.0, weight=0.20),
-            TermSpec(name="payment_days", term_type=TermType.PAYMENT_DAYS,
-                     direction=Direction.MINIMIZE, best=30, worst=90, weight=0.30),
-            TermSpec(name="contract_months", term_type=TermType.CONTRACT_MONTHS,
-                     direction=Direction.MAXIMIZE, best=36, worst=12, weight=0.10),
-            TermSpec(name="volume_units", term_type=TermType.VOLUME_UNITS,
-                     direction=Direction.MAXIMIZE, best=50000, worst=10000, weight=0.30),
-            TermSpec(name="rebate_pct", term_type=TermType.REBATE_PCT,
-                     direction=Direction.MINIMIZE, best=0.0, worst=8.0, weight=0.10),
+            TermSpec(
+                name="price",
+                term_type=TermType.PRICE,
+                direction=Direction.MAXIMIZE,
+                best=12.0,
+                worst=9.0,
+                weight=0.20,
+            ),
+            TermSpec(
+                name="payment_days",
+                term_type=TermType.PAYMENT_DAYS,
+                direction=Direction.MINIMIZE,
+                best=30,
+                worst=90,
+                weight=0.30,
+            ),
+            TermSpec(
+                name="contract_months",
+                term_type=TermType.CONTRACT_MONTHS,
+                direction=Direction.MAXIMIZE,
+                best=36,
+                worst=12,
+                weight=0.10,
+            ),
+            TermSpec(
+                name="volume_units",
+                term_type=TermType.VOLUME_UNITS,
+                direction=Direction.MAXIMIZE,
+                best=50000,
+                worst=10000,
+                weight=0.30,
+            ),
+            TermSpec(
+                name="rebate_pct",
+                term_type=TermType.REBATE_PCT,
+                direction=Direction.MINIMIZE,
+                best=0.0,
+                worst=8.0,
+                weight=0.10,
+            ),
         ],
     )
 

@@ -54,5 +54,12 @@ data/raw/
 data/processed/
 # NOTE: keep a small fixture CSV/JSON by force-adding: git add -f tests/fixtures/x.json
 
-# ─── Claude local overrides (per-machine, may hold trusted perms) ─
+# ─── Claude Code tooling ───────────────────────────────────────────
+# Personal dev tooling (agents/hooks/rules/skills) — kept out of the repo so the
+# 13 source files stay the visual center of gravity. CLAUDE.md and settings.json
+# are tracked (they document project conventions and are useful to a reviewer).
 .claude/settings.local.json
+.claude/agents/
+.claude/hooks/
+.claude/rules/
+.claude/skills/

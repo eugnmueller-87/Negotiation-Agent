@@ -118,9 +118,12 @@ class Envelope(BaseModel):
     """Versioned negotiation mandate.
 
     ``target_utility`` is where the concession curve starts (the aspiration);
-    ``reservation_utility`` is the walk-away floor. An offer scoring below the
-    reservation is never acceptable and, once the concession curve has fully
-    decayed to it without a deal, the negotiation escalates to a human buyer.
+    ``reservation_utility`` is the walk-away floor — the utility of the buyer's
+    BATNA (best alternative to a negotiated agreement) expressed on the [0,1]
+    scale. An offer scoring below the reservation is never acceptable and, once
+    the concession curve has fully decayed to it without a deal, the negotiation
+    escalates to a human buyer. The span between them, scored against the
+    supplier's own reservation, is the ZOPA (see ``simulator.scenarios.zopa_check``).
     """
 
     model_config = {"frozen": True}

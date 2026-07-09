@@ -93,9 +93,19 @@ def test_single_term_envelope_degenerate():
     from negotiation_agent.envelope import Direction, Envelope, TermSpec, TermType
 
     env = Envelope(
-        negotiation_id="x", version=1, signed_by="t",
-        terms=[TermSpec(name="price", term_type=TermType.PRICE, direction=Direction.MINIMIZE,
-                        best=9.0, worst=12.0, weight=1.0)],
+        negotiation_id="x",
+        version=1,
+        signed_by="t",
+        terms=[
+            TermSpec(
+                name="price",
+                term_type=TermType.PRICE,
+                direction=Direction.MINIMIZE,
+                best=9.0,
+                worst=12.0,
+                weight=1.0,
+            )
+        ],
     )
     prio = SupplierModel(appetite={"price": 1.0}).priorities(env)
     offer, realized, _ = fill_package(env, 0.6, prio)
