@@ -100,6 +100,29 @@ header{display:flex;justify-content:space-between;align-items:center;padding:15p
 .c-foot{display:flex;gap:10px;justify-content:flex-end;padding:14px 18px;border-top:1px solid var(--line);}
 .c-sample-link{margin-right:auto;background:none;border:none;color:var(--buyer);font-size:12.5px;text-decoration:underline;padding:0;}
 
+/* who-plays-each-side toggles */
+.modes{margin-top:18px;border:1px solid var(--line);border-radius:12px;background:var(--surface-1);padding:16px 18px;}
+.modes-row{display:flex;gap:14px;flex-wrap:wrap;margin-top:12px;}
+.mode-card{flex:1;min-width:220px;display:flex;justify-content:space-between;align-items:center;gap:12px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);padding:11px 13px;}
+.mode-lab{display:flex;flex-direction:column;gap:2px;} .mode-lab b{font-size:14px;} .mode-lab span{font-size:11.5px;color:var(--ink-3);}
+.mode-seg{display:inline-flex;background:var(--surface-1);border:1px solid var(--line);border-radius:8px;padding:2px;gap:2px;}
+.seg{background:none;border:none;border-radius:6px;padding:6px 11px;font-size:12.5px;color:var(--ink-2);}
+.seg.on{background:var(--buyer);color:#fff;font-weight:600;}
+.mode-seg[data-side="supplier"] .seg.on{background:var(--supplier);}
+.modes-note{font-size:11.5px;color:var(--ink-3);margin-top:11px;line-height:1.5;}
+
+/* human message composer (in the active human pane) */
+.composer{border-top:1px solid var(--line);padding:11px 12px;display:flex;flex-direction:column;gap:8px;background:var(--surface-2);}
+.composer .lab{font-size:11px;font-family:var(--mono);letter-spacing:.05em;text-transform:uppercase;color:var(--ink-3);display:flex;justify-content:space-between;align-items:center;gap:8px;}
+.composer textarea{width:100%;min-height:64px;border:1px solid var(--line);border-radius:9px;background:var(--surface-1);color:var(--ink);font-family:inherit;font-size:13.5px;padding:9px 11px;resize:vertical;line-height:1.5;}
+.composer textarea:focus{outline:2px solid var(--buyer);outline-offset:1px;}
+.composer .crow{display:flex;gap:8px;align-items:center;}
+.composer .hint{font-size:11px;color:var(--ink-3);flex:1;}
+.composer .send{background:var(--buyer);color:#fff;border:none;border-radius:8px;padding:8px 15px;font-size:13px;font-weight:600;}
+.composer .send.sup{background:var(--supplier);}
+.composer .send:disabled{opacity:.45;cursor:default;}
+.turnhint{font-size:12px;color:var(--ink-3);font-family:var(--mono);margin-left:6px;}
+
 /* run */
 .run{max-width:1240px;margin:0 auto;padding:18px 20px 60px;}
 .transport{display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap;}
@@ -114,6 +137,7 @@ header{display:flex;justify-content:space-between;align-items:center;padding:15p
 .panehead .sub{font-size:11.5px;color:var(--ink-3);margin-top:3px;}
 .panebody{display:grid;grid-template-columns:1fr 236px;min-height:0;}
 @media(max-width:560px){.panebody{grid-template-columns:1fr;}}
+.chatcol{display:flex;flex-direction:column;min-width:0;min-height:0;}
 .chat{padding:16px;display:flex;flex-direction:column;gap:15px;overflow-y:auto;max-height:560px;min-height:340px;}
 .msg{display:flex;flex-direction:column;gap:4px;}
 .msg.right{align-items:flex-end;} .msg.left{align-items:flex-start;}
@@ -451,7 +475,8 @@ const FORM={ supplierName:"Nordwerk Verpackung GmbH", contact:"vertrieb@nordwerk
   category:"Corrugated packaging — 12 mo supply", openingAsk:11.5, target:9.0, walkAway:10.5,
   contractMonths:24, paymentLever:60, persona:"aggressive" };
 
-const M={ phase:"setup", form:{...FORM}, sc:null, transcript:[], round:0, busy:false, status:"live", auto:false, showReason:true, error:null, lastMinutes:null, brief:null };
+const M={ phase:"setup", form:{...FORM}, sc:null, transcript:[], round:0, busy:false, status:"live", auto:false, showReason:true, error:null, lastMinutes:null, brief:null,
+  buyerMode:"ai", supplierMode:"ai", whoseTurn:"buyer", draft:"" };
 const RS={ lastSupplierOffer:null, roundIndex:0 }; // engine state
 const app=document.getElementById("app");
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -523,12 +548,32 @@ function setupView(){
       <div class="prep-note" id="prepNote"></div>
       ${briefCard()}
     </div>
+    <div class="modes">
+      <div class="prep-hd">Who plays each side <span class="k">— set either to “Human” to type the messages yourself</span></div>
+      <div class="modes-row">
+        ${sideToggle("buyer","Buyer","the autonomous agent")}
+        ${sideToggle("supplier","Supplier","the counterparty")}
+      </div>
+      <div class="modes-note">The deterministic engine runs underneath either way — it scores every offer, gates every number, and decides accept / counter / escalate. In Human mode you supply the words; the engine still holds the line.</div>
+    </div>
     <div class="startrow">
       <button class="primary big" id="startBtn">Start the negotiation →</button>
       <span class="meta">buyer target €${(+f.target).toFixed(2)} · walk-away €${(+f.walkAway).toFixed(2)} · lever up to net-${f.paymentLever}</span>
     </div>
   </div>
   ${contractModal()}`;
+}
+
+function sideToggle(side, label, hint){
+  const mode = side==="buyer" ? M.buyerMode : M.supplierMode;
+  const accent = side==="buyer" ? "var(--buyer)" : "var(--supplier)";
+  return `<div class="mode-card">
+    <div class="mode-lab"><b style="color:${accent}">${label}</b><span>${hint}</span></div>
+    <div class="mode-seg" data-side="${side}">
+      <button type="button" class="seg${mode==="ai"?" on":""}" data-mode="ai">🤖 AI</button>
+      <button type="button" class="seg${mode==="human"?" on":""}" data-mode="human">🧑 Human</button>
+    </div>
+  </div>`;
 }
 
 function briefCard(){
@@ -615,23 +660,40 @@ function bindSetup(){
 
   // supplier research (sample brief — the browser can't call Hades live)
   $("#researchBtn").onclick=()=>{ M.brief=sampleBrief(M.form.supplierName); render(); };
+
+  // who-plays-each-side toggles
+  app.querySelectorAll(".mode-seg .seg").forEach(b=>b.onclick=()=>{
+    const side=b.parentElement.dataset.side, mode=b.dataset.mode;
+    if(side==="buyer") M.buyerMode=mode; else M.supplierMode=mode;
+    render();
+  });
 }
 
 function start(){
   M.sc=buildScenario(M.form);
   RS.lastSupplierOffer={...M.sc.supplierOpening}; RS.roundIndex=0;
   M.transcript=[]; M.round=0; M.status="live"; M.error=null; M.auto=false; M.busy=false;
+  M.whoseTurn="buyer"; M.draft="";
   M.phase="running"; render();
+  // With a human in the loop, chain any leading AI turns so the human isn't stuck
+  // waiting on an AI's opening move. Pure AI-vs-AI still steps via the button.
+  if(anyHuman()) maybeAutoAdvance();
 }
 
 /* ---- run ---- */
 function runView(){
   const f=M.form;
+  const waitingHuman = M.status==="live" && activeMode()==="human";
+  const stepDisabled = M.busy || M.status!=="live" || waitingHuman;
+  const turnLabel = M.status!=="live" ? "" :
+    waitingHuman ? `<span class="turnhint">↓ your move — type the ${M.whoseTurn}'s message below</span>`
+                 : anyHuman() ? `<span class="turnhint">${M.whoseTurn==="buyer"?"buyer":"supplier"} (AI) is responding…</span>` : "";
   return `<div class="run">
     <div class="transport">
-      <button class="primary" id="stepBtn" ${M.busy||M.status!=="live"?"disabled":""}>${M.busy?'<span class="spin"></span>':"▶"} Step one turn</button>
-      <button class="ghost${M.auto?" on":""}" id="autoBtn" ${M.status!=="live"?"disabled":""}>${M.auto?"❚❚ Pause":"⏩ Auto-play"}</button>
+      <button class="primary" id="stepBtn" ${stepDisabled?"disabled":""}>${M.busy?'<span class="spin"></span>':"▶"} Step one turn</button>
+      <button class="ghost${M.auto?" on":""}" id="autoBtn" ${M.status!=="live"||anyHuman()?"disabled":""} ${anyHuman()?'title="disabled while a human is playing"':""}>${M.auto?"❚❚ Pause":"⏩ Auto-play"}</button>
       <label class="reasoncheck"><input type="checkbox" id="reasonChk" ${M.showReason?"checked":""}> show agent reasoning</label>
+      ${turnLabel}
       ${M.error?`<span style="color:var(--crit);font-size:12.5px">⚠ ${esc(M.error)}</span>`:""}
       <span class="cat">${esc(f.category)}</span>
     </div>
@@ -647,25 +709,53 @@ function bubble(side, who, inner, accentVar, extra=""){
   const style = side==="right" ? `background:${accentVar}` : "";
   return `<div class="msg ${side}"><div class="who">${esc(who)}</div><div class="bubble" style="${style}">${inner}</div>${extra}</div>`;
 }
-function thinkingBubble(accentVar){
-  return `<div class="msg right"><div class="who">You (buyer agent)</div><div class="bubble" style="background:${accentVar}"><span class="dots"><i></i><i></i><i></i></span></div></div>`;
+function thinkingBubble(accentVar, who){
+  return `<div class="msg right"><div class="who">${esc(who||"You (buyer agent)")}</div><div class="bubble" style="background:${accentVar}"><span class="dots"><i></i><i></i><i></i></span></div></div>`;
+}
+
+// The composer shows only in the pane for the side that (a) is human AND (b) is
+// on the clock right now. `side` is "buyer" or "supplier".
+function composer(side){
+  const isHuman = side==="buyer" ? M.buyerMode==="human" : M.supplierMode==="human";
+  if(!isHuman || M.status!=="live" || M.whoseTurn!==side) return "";
+  const sup = side==="supplier";
+  const ph = sup
+    ? "Reply as the supplier — name a price, payment terms, contract length…"
+    : "Write the buyer's message. The engine has already decided this turn; your words are checked against its approved numbers.";
+  return `<div class="composer">
+    <div class="lab"><span>${sup?"you · supplier":"you · buyer"} — round ${M.round}${sup?"":" · engine decides underneath"}</span><span>⌘/Ctrl+↵ to send</span></div>
+    <textarea id="composerText" placeholder="${ph}" ${M.busy?"disabled":""}>${esc(M.draft)}</textarea>
+    <div class="crow">
+      <span class="hint">${sup?"Your numbers become the next offer the engine scores.":"Try to state an un-approved number — the guard will catch it."}</span>
+      <button class="send${sup?" sup":""}" id="sendBtn" ${M.busy||!(M.draft||"").trim()?"disabled":""}>Send ▸</button>
+    </div>
+  </div>`;
 }
 
 function buyerPane(){
   const f=M.form, env=M.sc.buyerEnv;
+  const buyerWho = M.buyerMode==="human" ? "You (buyer)" : "Buyer agent";
   const msgs = M.transcript.map(m=>{
     if(m.from==="buyer"){
       const extra = (M.showReason && m.decision) ? reasonDrawer(env, m) : "";
-      return bubble("right","You (buyer agent)", esc(m.text), "var(--buyer)", extra);
+      const who = m.byHuman ? "You (buyer)" : "Buyer agent";
+      return bubble("right", who, esc(m.text), "var(--buyer)", extra);
     }
     return bubble("left", f.supplierName, esc(m.text), "var(--supplier)");
   }).join("");
   const ds=dealState();
+  const thinking = M.busy && M.whoseTurn==="buyer" && M.buyerMode==="ai";
+  const emptyMsg = M.buyerMode==="ai"
+    ? `<div class="empty">Press “Step one turn” to send the opening offer.</div>`
+    : `<div class="empty">You're the buyer — type your opening message below. The engine has set this round's threshold.</div>`;
   return `<div class="pane">
-    <div class="panehead"><span class="who">What the buyer sees</span><span class="tag" style="background:var(--buyer)22;color:var(--buyer)">the agent</span>
+    <div class="panehead"><span class="who">What the buyer sees</span><span class="tag" style="background:var(--buyer)22;color:var(--buyer)">${M.buyerMode==="human"?"you":"the agent"}</span>
       <div class="sub">outgoing right · supplier incoming left · live deal state</div></div>
     <div class="panebody">
-      <div class="chat" id="chatA">${msgs || `<div class="empty">Press “Step one turn” to send the opening offer.</div>`}${M.busy?thinkingBubble("var(--buyer)"):""}</div>
+      <div class="chatcol">
+        <div class="chat" id="chatA">${msgs || emptyMsg}${thinking?thinkingBubble("var(--buyer)",buyerWho):""}</div>
+        ${composer("buyer")}
+      </div>
       <div class="sidebar">
         <div class="stitle">live deal state</div>
         <div class="uline"><span>buyer utility</span><b class="mono" style="color:var(--buyer)">${ds.buyerUtility!=null?ds.buyerUtility.toFixed(3):"—"}</b></div>
@@ -681,15 +771,21 @@ function buyerPane(){
 }
 function supplierPane(){
   const f=M.form;
+  const supWho = M.supplierMode==="human" ? "You (supplier)" : f.supplierName;
   const msgs=M.transcript.map(m=>{
-    if(m.from==="supplier") return bubble("right",`You (${f.supplierName})`, esc(m.text),"var(--supplier)");
+    if(m.from==="supplier"){ const who=m.byHuman?"You (supplier)":f.supplierName; return bubble("right",who, esc(m.text),"var(--supplier)"); }
     return bubble("left","Buyer", esc(m.text),"var(--buyer)");
   }).join("");
+  const thinking = M.busy && M.whoseTurn==="supplier" && M.supplierMode==="ai";
+  const tag = M.supplierMode==="human" ? "you" : esc(f.persona);
   return `<div class="pane">
-    <div class="panehead"><span class="who">What the supplier sees</span><span class="tag" style="background:var(--supplier)22;color:var(--supplier)">${f.persona}</span>
+    <div class="panehead"><span class="who">What the supplier sees</span><span class="tag" style="background:var(--supplier)22;color:var(--supplier)">${tag}</span>
       <div class="sub">same transcript, roles flipped — no view of the buyer's target or walk-away</div></div>
     <div class="panebody">
-      <div class="chat" id="chatB">${msgs || `<div class="empty">The supplier is waiting for the buyer's first message.</div>`}</div>
+      <div class="chatcol">
+        <div class="chat" id="chatB">${msgs || `<div class="empty">The supplier is waiting for the buyer's first message.</div>`}${thinking?thinkingBubble("var(--supplier)",supWho):""}</div>
+        ${composer("supplier")}
+      </div>
       <div class="sidebar">
         <div class="stitle">the supplier cannot see</div>
         <div class="hrow"><span>Buyer target price</span><b class="mono redacted">€${(+f.target).toFixed(2)}</b></div>
@@ -944,42 +1040,96 @@ function dealState(){
 }
 
 function bindRun(){
-  const s=$("#stepBtn"); if(s) s.onclick=()=>runTurn();
+  const s=$("#stepBtn"); if(s) s.onclick=()=>advance();
   const a=$("#autoBtn"); if(a) a.onclick=toggleAuto;
   const c=$("#reasonChk"); if(c) c.onchange=()=>{ M.showReason=c.checked; render(); };
   const mb=$("#minutesBtn"); if(mb) mb.onclick=openMinutes;
+  // human composer (present only when the active side is human)
+  const ta=$("#composerText");
+  if(ta){
+    ta.value=M.draft;
+    ta.oninput=()=>{ M.draft=ta.value; const sb=$("#sendBtn"); if(sb) sb.disabled=!ta.value.trim(); };
+    ta.onkeydown=e=>{ if((e.metaKey||e.ctrlKey)&&e.key==="Enter"){ e.preventDefault(); submitHuman(); } };
+    ta.focus();
+  }
+  const sb=$("#sendBtn"); if(sb) sb.onclick=submitHuman;
   for(const id of ["chatA","chatB"]){ const el=$("#"+id); if(el) el.scrollTop=el.scrollHeight; }
 }
 
-async function runTurn(){
+const anyHuman=()=>M.buyerMode==="human"||M.supplierMode==="human";
+const activeMode=()=>M.whoseTurn==="buyer"?M.buyerMode:M.supplierMode;
+
+// One BUYER turn. The engine always decides; `humanText`, when the buyer is human,
+// is the prose the person typed — checked against the guard, but the offer that
+// goes on the table is still the engine's approved package (a human can't concede
+// past the floor by typing a number; the guard flags it and the engine holds).
+async function buyerTurn(humanText){
+  const decision=decide(M.sc.buyerEnv, M.sc.priorities, RS.roundIndex, RS.lastSupplierOffer);
+  const text = humanText!=null ? humanText : await draftBuyerMessage(M.sc, decision, M.form);
+  const guard=numericGuard(M.sc.buyerEnv, decision.approved, text);
+  M.transcript.push({ from:"buyer", text, decision, guard, byHuman:humanText!=null,
+    offer: decision.outcome==="counter"?decision.counter:decision.approved });
+  if(decision.outcome==="accept"){ M.status="closed"; return; }
+  if(decision.outcome==="escalate"){ M.status="escalated"; return; }
+  M.whoseTurn="supplier";
+}
+
+// One SUPPLIER turn. `humanText`, when the supplier is human, is the reply the
+// person typed; either way it runs through the same extractor that turns prose
+// into an offer the engine will score next buyer turn.
+async function supplierTurn(humanText){
+  const text = humanText!=null ? humanText : await draftSupplierReply(M.sc, M.form, lastBuyerText(), RS.roundIndex);
+  const supOffer=extractSupplierOffer(M.sc, text, RS.lastSupplierOffer);
+  RS.lastSupplierOffer=supOffer; RS.roundIndex+=1; M.round=RS.roundIndex;
+  const walked=/walk away|no deal|cannot proceed|end (the )?discussion|not interested/i.test(text);
+  M.transcript.push({ from:"supplier", text, offer:supOffer, byHuman:humanText!=null });
+  if(walked) M.status="walked"; else M.whoseTurn="buyer";
+}
+
+function lastBuyerText(){ return [...M.transcript].reverse().find(m=>m.from==="buyer")?.text || ""; }
+
+// Advance the side whose turn it is. If that side is a human, do nothing here —
+// the composer in that pane takes over (submitHuman). AI sides run automatically.
+async function advance(){
   if(M.busy||M.status!=="live"||!M.sc) return;
+  if(activeMode()==="human") return; // wait for the human to type
   M.busy=true; M.error=null; render();
   try{
-    const decision=decide(M.sc.buyerEnv, M.sc.priorities, RS.roundIndex, RS.lastSupplierOffer);
-    const buyerText=await draftBuyerMessage(M.sc, decision, M.form);
-    const guard=numericGuard(M.sc.buyerEnv, decision.approved, buyerText);
-    M.transcript.push({ from:"buyer", text:buyerText, decision, guard,
-      offer: decision.outcome==="counter"?decision.counter:decision.approved });
-    if(decision.outcome==="accept"){ M.status="closed"; M.busy=false; render(); return; }
-    if(decision.outcome==="escalate"){ M.status="escalated"; M.busy=false; render(); return; }
-    render(); // show buyer message before supplier "thinks"
-
-    const supText=await draftSupplierReply(M.sc, M.form, buyerText, RS.roundIndex);
-    const supOffer=extractSupplierOffer(M.sc, supText, RS.lastSupplierOffer);
-    RS.lastSupplierOffer=supOffer; RS.roundIndex+=1; M.round=RS.roundIndex;
-    const walked=/walk away|no deal|cannot proceed|end (the )?discussion|not interested/i.test(supText);
-    M.transcript.push({ from:"supplier", text:supText, offer:supOffer });
-    if(walked) M.status="walked";
+    if(M.whoseTurn==="buyer"){ await buyerTurn(null); render(); }
+    else { await supplierTurn(null); }
   }catch(e){ M.error=(e&&e.message)||"The negotiation call failed. Try again."; M.auto=false; }
   finally{ M.busy=false; render(); }
 }
 
+// A human pressed Send in the active pane.
+async function submitHuman(){
+  if(M.busy||M.status!=="live"||activeMode()!=="human") return;
+  const text=(M.draft||"").trim(); if(!text) return;
+  M.busy=true; M.error=null; M.draft="";
+  try{
+    if(M.whoseTurn==="buyer") await buyerTurn(text);
+    else await supplierTurn(text);
+  }catch(e){ M.error=(e&&e.message)||"Something went wrong. Try again."; }
+  finally{ M.busy=false; render(); maybeAutoAdvance(); }
+}
+
+// After a human turn, if the NEXT side is AI, run it automatically so the human
+// doesn't have to click twice. Chains AI turns until it's the human's turn again
+// or the deal ends.
+async function maybeAutoAdvance(){
+  while(M.status==="live" && activeMode()==="ai" && !M.busy){
+    await advance();
+    if(anyHuman()) await new Promise(r=>setTimeout(r, HAS_LLM?400:550));
+  }
+}
+
 async function toggleAuto(){
+  if(anyHuman()) return; // no auto-play with a human in the loop
   M.auto=!M.auto; render();
   if(!M.auto) return;
   while(M.auto && M.status==="live"){
     if(RS.roundIndex>CFG.maxRounds+1) break;
-    await runTurn();
+    await advance();
     if(!M.auto || M.status!=="live") break;
     await new Promise(r=>setTimeout(r, HAS_LLM?500:750));
   }
