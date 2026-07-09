@@ -36,9 +36,8 @@ dev = [
 ]
 
 [project.urls]
-# TODO: replace <you> with the real GitHub account once the repo is pushed.
-Homepage = "https://github.com/<you>/negotiation-agent"
-Repository = "https://github.com/<you>/negotiation-agent"
+Homepage = "https://github.com/eugnmueller-87/Negotiation-Agent"
+Repository = "https://github.com/eugnmueller-87/Negotiation-Agent"
 
 [project.scripts]
 neg-sim = "negotiation_agent.simulator.cli:main"
