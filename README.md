@@ -24,7 +24,9 @@ Two single-file demos in [`demo/`](demo/), every number real engine output:
 - **[`demo/peitho.html`](demo/peitho.html)** — a **self-play negotiation** in two mirrored
   panes (buyer view · supplier view), a reasoning drawer showing the real
   accept/counter/escalate math + numeric-guard verdict, and a **meeting-minutes**
-  generator at close. *The mechanism story.*
+  generator at close. Set either side to **🧑 Human** to type the messages yourself
+  and watch the engine react live; **upload a contract** to pre-fill the opening
+  position and pull a **supplier due-diligence brief**. *The mechanism story.*
 
 ```text
 $ neg-sim
@@ -61,7 +63,7 @@ neg-sim --baseline                         # logrolling vs price-split (the proo
 neg-sim --transcript ref/aggressive/oracle # replay one negotiation, turn by turn
 neg-sim --json                             # machine-readable metrics
 
-pytest -q                                  # 55 tests, all green
+pytest -q                                  # 92 tests, all green
 mypy && ruff check .                       # strict types, clean lint
 ```
 
@@ -258,17 +260,26 @@ linear-additive utility model, which is what makes the audit replay exact.
 
 - **v0 (this repo)** — envelope schema, engine, baseline, simulator, evals. Pure
   Python, CI-gated. ✅
-- **v1** — negotiate with a real human supplier over email/chat. LLM extractor
-  (Pydantic + per-field confidence), intent classifier, reply composer behind the
-  numeric guard, prompt-injection red-team suite; FastAPI + Postgres, autonomous
-  close within envelope. **Full design:
+- **v1 (in progress)** — negotiate with a real human supplier over email/chat. LLM
+  extractor (Pydantic + per-field confidence), intent classifier, reply composer
+  behind the numeric guard, prompt-injection red-team suite; FastAPI + Postgres,
+  autonomous close within envelope. **Full design:
   [docs/v1-architecture.md](docs/v1-architecture.md).**
+  - **Landed so far:** contract intake ([`intake.py`](src/negotiation_agent/intake.py),
+    a hardened regex extractor behind a `ContractExtractor` seam the LLM extractor
+    plugs into), supplier due-diligence research via the **Hades** agent
+    ([`research.py`](src/negotiation_agent/research.py)), a pre-flight orchestrator
+    ([`prepare.py`](src/negotiation_agent/prepare.py)), and a `POST /prepare`
+    endpoint ([`api.py`](src/negotiation_agent/api.py), optional `[web]` extra).
+    Research **informs the human, never feeds the engine** — decisions stay a pure
+    function of the signed mandate.
 - **v2** — DocuSign close, chat channel, buyer dashboard, Art. 50 AI-disclosure banner.
 
 **v1 seams already in place:** `SupplierAgent` protocol (a Claude-backed supplier
 drops in behind `respond()`), `SupplierModel.from_intents()` (the classifier's
-plug point), `approved_numbers` (the guard's allowlist), and an
-`injection_pass_rate` metric placeholder.
+plug point), `approved_numbers` (the guard's allowlist), the `ContractExtractor`
+seam (deterministic today, LLM tomorrow), and an `injection_pass_rate` metric
+placeholder.
 
 ## License
 
