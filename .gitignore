@@ -1,0 +1,58 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# Simulator artifacts
+runs/
+*.log
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# ─── SECRETS (never commit — mandatory core) ───────────────
+.env
+.env.*
+!.env.example
+*.local
+*.pem
+*.key
+*.crt
+*.pfx
+*.p12
+id_rsa
+id_ed25519
+credentials.json
+service-account*.json
+secrets/
+.npmrc
+.pypirc
+
+# ─── Data / AI artifacts (never commit dumps, fixtures with real data, or eval outputs) ─
+*.parquet
+*.pkl
+*.pickle
+*.duckdb
+*.sqlite
+*.db
+data/raw/
+data/processed/
+# NOTE: keep a small fixture CSV/JSON by force-adding: git add -f tests/fixtures/x.json
+
+# ─── Claude local overrides (per-machine, may hold trusted perms) ─
+.claude/settings.local.json

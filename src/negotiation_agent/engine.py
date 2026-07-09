@@ -1,0 +1,294 @@
+"""Deal engine — deterministic core. No LLM, no authority delegated.
+
+The engine scores incoming supplier offers against the buyer's envelope, decides
+whether to accept / counter / escalate on a Boulware concession schedule, and —
+when it counters — generates a logrolled package via :mod:`packages`.
+
+## Boulware concession curve
+
+The per-round acceptance threshold decays from ``target_utility`` toward
+``reservation_utility``:
+
+    threshold(t) = reservation + (target - reservation) * (1 - (t / T) ** beta)
+
+with ``beta > 1`` (Boulware: concede late and steeply) and ``T = max_rounds``.
+Round index ``t`` = engine decisions already made, so ``threshold(0) = target``
+and ``threshold(T) = reservation`` exactly. The engine counters at t = 0..T-1;
+at t = T it never counters — it accepts (if U >= reservation) or escalates.
+
+## Numeric-guard contract
+
+Every decision carries ``approved_numbers`` — the ONLY numeric values a
+downstream LLM-composed reply may contain. Thresholds, utilities, reservation,
+and beta are internal and must never reach supplier-facing prose. This is the
+confidentiality line of the whole system.
+"""
+
+from __future__ import annotations
+
+import enum
+from typing import Literal
+
+from pydantic import BaseModel, Field
+
+from negotiation_agent.envelope import Envelope, Offer
+from negotiation_agent.packages import InfeasiblePackage, fill_package
+from negotiation_agent.supplier_model import SupplierModel
+
+
+class Outcome(enum.StrEnum):
+    ACCEPT = "accept"
+    COUNTER = "counter"
+    ESCALATE = "escalate"
+
+
+class EngineConfig(BaseModel):
+    model_config = {"frozen": True}
+
+    max_rounds: int = Field(default=8, ge=1, description="T; engine may counter t=0..T-1")
+    beta: float = Field(default=4.0, ge=1.0, description="Boulware exponent; >1 concedes late")
+    stall_rounds: int = Field(default=3, ge=1, description="identical supplier offers -> escalate")
+    on_unknown_terms: Literal["escalate", "ignore"] = "escalate"
+
+
+class NegotiationState(BaseModel):
+    """Immutable snapshot threaded through :meth:`DealEngine.decide`.
+
+    A fresh instance is returned per decision so the whole negotiation replays as
+    a fold over the transcript.
+    """
+
+    model_config = {"frozen": True}
+
+    round_index: int = 0
+    last_counter: Offer | None = None
+    last_incoming: Offer | None = None
+    best_incoming_utility: float = -1.0
+    stall_count: int = 0
+    # Per-term ceiling on offered v, ratcheted down each round so concessions
+    # never retract even if the belief is updated mid-negotiation (v1).
+    concession_caps: dict[str, float] = Field(default_factory=dict)
+
+
+class EngineDecision(BaseModel):
+    model_config = {"frozen": True}
+
+    outcome: Outcome
+    round_index: int
+    threshold: float
+    incoming_utility: float | None = None
+    counter: Offer | None = None
+    counter_utility: float | None = None
+    approved_numbers: dict[str, float] = Field(default_factory=dict)
+    reason: str = ""
+
+
+class DealEngine:
+    """Deterministic negotiator. One instance can serve many negotiations."""
+
+    def __init__(
+        self,
+        envelope: Envelope,
+        supplier_model: SupplierModel,
+        config: EngineConfig | None = None,
+    ) -> None:
+        self.envelope = envelope
+        self.config = config or EngineConfig()
+        self._priorities = supplier_model.priorities(envelope)
+
+    # ---- Boulware schedule -------------------------------------------------
+
+    def threshold(self, round_index: int) -> float:
+        """Acceptance threshold at ``round_index`` (clamped to [0, T])."""
+        env, cfg = self.envelope, self.config
+        t = min(max(round_index, 0), cfg.max_rounds)
+        frac = t / cfg.max_rounds
+        span = env.target_utility - env.reservation_utility
+        return env.reservation_utility + span * (1.0 - frac**cfg.beta)
+
+    # ---- Decision ----------------------------------------------------------
+
+    def decide(
+        self, state: NegotiationState, incoming: Offer | None
+    ) -> tuple[EngineDecision, NegotiationState]:
+        """Return ``(decision, next_state)`` for one engine move.
+
+        ``incoming=None`` is the opening anchor. Pure: the same
+        ``(state, incoming)`` always yields the same result.
+        """
+        t = state.round_index
+        theta = self.threshold(t)
+
+        # --- Opening anchor: logrolled package at target, not a naive ideal. ---
+        if incoming is None:
+            return self._counter(state, theta, reason="opening_anchor")
+
+        # --- Unknown-term guard: accepting unmodeled obligations is a trap. ---
+        unknown = set(incoming.terms) - set(self.envelope.term_map)
+        if unknown and self.config.on_unknown_terms == "escalate":
+            return (
+                self._escalate(t, theta, reason=f"unmodeled_terms:{sorted(unknown)}"),
+                state,
+            )
+
+        # --- Merge partial offers: unaddressed terms inherit the standing
+        #     counter. Envelope.utility raises on missing terms, so this must
+        #     happen before scoring. ---
+        merged = self._merge(incoming, state.last_counter)
+        if merged is None:
+            return self._escalate(t, theta, reason="malformed_offer"), state
+        u_in = self.envelope.utility(merged)
+        best_u = max(state.best_incoming_utility, u_in)
+
+        # --- Stall tracking: deterministic suppliers repeat exactly. ---
+        stalled = state.last_incoming is not None and merged.terms == state.last_incoming.terms
+        stall_count = state.stall_count + 1 if stalled else 0
+        if stall_count >= self.config.stall_rounds:
+            nxt = state.model_copy(
+                update={
+                    "last_incoming": merged,
+                    "best_incoming_utility": best_u,
+                    "stall_count": stall_count,
+                }
+            )
+            return (
+                self._escalate(t, theta, reason="supplier_stalled", incoming_utility=u_in),
+                nxt,
+            )
+
+        # --- Accept rule: single clause. Counter utility is always >= theta by
+        #     construction, so an "accept if incoming >= my counter" clause is
+        #     provably redundant. ---
+        if u_in >= theta:
+            approved = {n: merged.terms[n] for n in self.envelope.term_map}
+            decision = EngineDecision(
+                outcome=Outcome.ACCEPT,
+                round_index=t,
+                threshold=theta,
+                incoming_utility=u_in,
+                approved_numbers=approved,
+                reason="accept_threshold",
+            )
+            nxt = state.model_copy(
+                update={
+                    "last_incoming": merged,
+                    "best_incoming_utility": best_u,
+                    "stall_count": stall_count,
+                }
+            )
+            return decision, nxt
+
+        # --- Deadline: at t == T we never counter. ---
+        if t >= self.config.max_rounds:
+            nxt = state.model_copy(
+                update={
+                    "last_incoming": merged,
+                    "best_incoming_utility": best_u,
+                    "stall_count": stall_count,
+                }
+            )
+            return (
+                self._escalate(
+                    t,
+                    theta,
+                    reason=f"deadline_no_deal:best_u={best_u:.4f}",
+                    incoming_utility=u_in,
+                ),
+                nxt,
+            )
+
+        # --- Counter with a fresh logrolled package at this round's threshold. ---
+        return self._counter(
+            state,
+            theta,
+            reason="counter",
+            incoming=merged,
+            u_in=u_in,
+            best_u=best_u,
+            stall_count=stall_count,
+        )
+
+    # ---- Helpers -----------------------------------------------------------
+
+    def _counter(
+        self,
+        state: NegotiationState,
+        theta: float,
+        *,
+        reason: str,
+        incoming: Offer | None = None,
+        u_in: float | None = None,
+        best_u: float | None = None,
+        stall_count: int = 0,
+    ) -> tuple[EngineDecision, NegotiationState]:
+        try:
+            offer, realized, planned_v = fill_package(
+                self.envelope, theta, self._priorities, caps=state.concession_caps or None
+            )
+        except InfeasiblePackage:
+            # Caps have ratcheted below what theta needs — nothing legal left to offer.
+            return (
+                self._escalate(state.round_index, theta, reason="no_feasible_counter",
+                               incoming_utility=u_in),
+                state,
+            )
+
+        new_caps = {
+            name: min(state.concession_caps.get(name, 1.0), planned_v[name])
+            for name in planned_v
+        }
+        decision = EngineDecision(
+            outcome=Outcome.COUNTER,
+            round_index=state.round_index,
+            threshold=theta,
+            incoming_utility=u_in,
+            counter=offer,
+            counter_utility=realized,
+            approved_numbers=dict(offer.terms),
+            reason=reason,
+        )
+        nxt = state.model_copy(
+            update={
+                "round_index": state.round_index + 1,
+                "last_counter": offer,
+                "last_incoming": incoming if incoming is not None else state.last_incoming,
+                "best_incoming_utility": (
+                    best_u if best_u is not None else state.best_incoming_utility
+                ),
+                "stall_count": stall_count,
+                "concession_caps": new_caps,
+            }
+        )
+        return decision, nxt
+
+    def _escalate(
+        self,
+        round_index: int,
+        theta: float,
+        *,
+        reason: str,
+        incoming_utility: float | None = None,
+    ) -> EngineDecision:
+        return EngineDecision(
+            outcome=Outcome.ESCALATE,
+            round_index=round_index,
+            threshold=theta,
+            incoming_utility=incoming_utility,
+            reason=reason,
+        )
+
+    def _merge(self, incoming: Offer, last_counter: Offer | None) -> Offer | None:
+        """Fill terms the supplier didn't address from the standing counter.
+
+        Returns None if a term is unaddressed and there is no standing counter
+        to inherit from (malformed opening from the supplier).
+        """
+        merged: dict[str, float] = {}
+        for name in self.envelope.term_map:
+            if name in incoming.terms:
+                merged[name] = incoming.terms[name]
+            elif last_counter is not None and name in last_counter.terms:
+                merged[name] = last_counter.terms[name]
+            else:
+                return None
+        return Offer(terms=merged)
