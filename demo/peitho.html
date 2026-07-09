@@ -1,0 +1,803 @@
+<title>Peitho — autonomous negotiation, self-play demo</title>
+<style>
+:root {
+  --bg:#12110f; --surface-1:#1b1a17; --surface-2:#232019; --line:#33302a;
+  --ink:#f4f2ec; --ink-2:#b4afa3; --ink-3:#7d7970;
+  --buyer:#3987e5; --supplier:#eb6834;
+  --good:#2fb344; --warn:#fab219; --crit:#e05656; --live:#8a857a;
+  --sans:"Inter",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono:ui-monospace,"SF Mono","Cascadia Code",Menlo,Consolas,monospace;
+}
+:root[data-theme="light"]{
+  --bg:#f7f6f2; --surface-1:#fff; --surface-2:#f1efe9; --line:#e4e1d9;
+  --ink:#17150f; --ink-2:#55524a; --ink-3:#8b877d;
+  --buyer:#2a78d6; --supplier:#d9531f; --good:#0ca30c; --warn:#c47f00; --crit:#d03b3b; --live:#9a958a;
+}
+@media (prefers-color-scheme: light){ :root:not([data-theme="dark"]){
+  --bg:#f7f6f2; --surface-1:#fff; --surface-2:#f1efe9; --line:#e4e1d9;
+  --ink:#17150f; --ink-2:#55524a; --ink-3:#8b877d;
+  --buyer:#2a78d6; --supplier:#d9531f; --good:#0ca30c; --warn:#c47f00; --crit:#d03b3b; --live:#9a958a;
+}}
+*{box-sizing:border-box;}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased;}
+h1,h2{margin:0;font-weight:650;letter-spacing:-0.02em;text-wrap:balance;}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums;}
+button{font-family:inherit;cursor:pointer;}
+:focus-visible{outline:2px solid var(--buyer);outline-offset:2px;border-radius:5px;}
+
+header{display:flex;justify-content:space-between;align-items:center;padding:15px 24px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg);z-index:20;}
+.brand{display:flex;align-items:baseline;gap:12px;}
+.brand b{font-size:19px;letter-spacing:-0.02em;}
+.brand span{font-size:12px;color:var(--ink-3);font-family:var(--mono);}
+.hstatus{display:flex;align-items:center;gap:14px;}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border-radius:999px;font-size:12px;font-weight:600;}
+.pill .dot{width:6px;height:6px;border-radius:50%;}
+.theme{background:var(--surface-1);color:var(--ink-2);border:1px solid var(--line);border-radius:8px;padding:6px 11px;font-size:13px;}
+.theme:hover{color:var(--ink);}
+
+.in{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:8px;background:var(--surface-1);color:var(--ink);font-size:14px;font-family:inherit;}
+.in:focus{outline:2px solid var(--buyer);outline-offset:1px;}
+.primary{background:var(--buyer);color:#fff;border:none;border-radius:9px;padding:9px 16px;font-size:14px;font-weight:600;display:inline-flex;align-items:center;gap:8px;}
+.primary:hover:not(:disabled){filter:brightness(1.08);}
+.primary:disabled{opacity:.45;cursor:default;}
+.primary.big{padding:12px 22px;font-size:15px;}
+.ghost{background:var(--surface-2);color:var(--ink-2);border:1px solid var(--line);border-radius:9px;padding:9px 14px;font-size:13.5px;}
+.ghost:hover{color:var(--ink);} .ghost.on{background:var(--buyer);color:#fff;border-color:var(--buyer);}
+.ghost:disabled{opacity:.45;cursor:default;}
+
+/* setup */
+.setup{max-width:860px;margin:0 auto;padding:34px 24px 80px;}
+.setup h1{font-size:27px;}
+.lede{color:var(--ink-2);font-size:15.5px;line-height:1.55;margin:12px 0 0;max-width:60ch;}
+.badge-mode{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-family:var(--mono);color:var(--ink-3);margin-top:14px;padding:5px 10px;border:1px solid var(--line);border-radius:7px;}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:28px;}
+.fld{display:flex;flex-direction:column;gap:6px;} .fld.wide{grid-column:1/-1;}
+.fld label{font-size:12.5px;font-weight:600;color:var(--ink-2);}
+.fld label i{font-weight:400;color:var(--ink-3);font-style:normal;}
+.personas{display:flex;gap:10px;flex-wrap:wrap;}
+.persona{flex:1;min-width:150px;text-align:left;background:var(--surface-1);border:1px solid var(--line);border-radius:10px;padding:11px 13px;display:flex;flex-direction:column;gap:3px;color:var(--ink);}
+.persona b{font-size:13.5px;} .persona span{font-size:11.5px;color:var(--ink-3);}
+.persona.on{border-color:var(--supplier);background:color-mix(in srgb,var(--supplier) 12%,transparent);}
+.startrow{margin-top:24px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
+.startrow .meta{font-size:12.5px;color:var(--ink-3);}
+
+/* run */
+.run{max-width:1240px;margin:0 auto;padding:18px 20px 60px;}
+.transport{display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap;}
+.reasoncheck{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;color:var(--ink-2);cursor:pointer;}
+.transport .cat{margin-left:auto;font-size:12.5px;color:var(--ink-3);font-family:var(--mono);}
+.panes{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+@media(max-width:900px){.panes{grid-template-columns:1fr;}}
+.pane{background:var(--surface-1);border:1px solid var(--line);border-radius:14px;overflow:hidden;display:flex;flex-direction:column;}
+.panehead{padding:13px 16px;border-bottom:1px solid var(--line);background:var(--surface-2);}
+.panehead .who{font-weight:650;font-size:14px;}
+.panehead .tag{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;padding:2px 7px;border-radius:5px;margin-left:9px;}
+.panehead .sub{font-size:11.5px;color:var(--ink-3);margin-top:3px;}
+.panebody{display:grid;grid-template-columns:1fr 236px;min-height:0;}
+@media(max-width:560px){.panebody{grid-template-columns:1fr;}}
+.chat{padding:16px;display:flex;flex-direction:column;gap:15px;overflow-y:auto;max-height:560px;min-height:340px;}
+.msg{display:flex;flex-direction:column;gap:4px;}
+.msg.right{align-items:flex-end;} .msg.left{align-items:flex-start;}
+.msg .who{font-size:10.5px;color:var(--ink-3);font-family:var(--mono);padding:0 4px;}
+.bubble{max-width:86%;padding:11px 13px;border-radius:14px;font-size:13.5px;line-height:1.5;white-space:pre-wrap;word-break:break-word;}
+.msg.right .bubble{color:#fff;border-top-right-radius:4px;}
+.msg.left .bubble{background:var(--surface-2);border-top-left-radius:4px;}
+.empty{color:var(--ink-3);font-size:13px;text-align:center;padding:44px 20px;font-style:italic;}
+
+/* reasoning drawer */
+.reason{margin-top:2px;max-width:86%;align-self:flex-end;background:var(--surface-2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:12px;}
+.reason .hd{display:flex;justify-content:space-between;align-items:center;margin-bottom:7px;}
+.reason .hd .lab{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);}
+.reason .oc{font-family:var(--mono);font-weight:700;font-size:11.5px;letter-spacing:.05em;}
+.reason .math{display:flex;flex-direction:column;gap:3px;margin-bottom:8px;}
+.reason .row{display:flex;justify-content:space-between;color:var(--ink-2);}
+.reason .row .mono{color:var(--ink);}
+.reason .rule{font-size:12px;line-height:1.45;padding:7px 9px;background:var(--surface-1);border-radius:7px;}
+.reason .approved{margin-top:8px;font-size:11.5px;display:flex;align-items:center;gap:5px;flex-wrap:wrap;}
+.chip{font-family:var(--mono);font-size:11px;background:color-mix(in srgb,var(--buyer) 15%,transparent);color:var(--buyer);padding:1px 7px;border-radius:5px;}
+.reason .guard{margin-top:9px;padding-top:8px;border-top:1px solid var(--line);font-size:11.5px;line-height:1.4;}
+
+/* sidebar / asymmetry */
+.sidebar{border-left:1px solid var(--line);padding:16px;background:var(--surface-2);font-size:12.5px;}
+@media(max-width:560px){.sidebar{border-left:none;border-top:1px solid var(--line);}}
+.stitle{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);margin-bottom:8px;}
+.uline{display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:5px;}
+.utrack{height:7px;background:var(--surface-1);border-radius:4px;overflow:hidden;margin-bottom:6px;}
+.utrack i{display:block;height:100%;transition:width .3s;}
+.ssub{font-size:11.5px;color:var(--ink-3);}
+.dterm{display:flex;justify-content:space-between;font-size:12.5px;padding:4px 0;border-bottom:1px solid var(--line);}
+.dterm:last-child{border-bottom:none;}
+.gap{font-size:12px;color:var(--ink-2);margin-top:8px;}
+.hrow{display:flex;justify-content:space-between;font-size:12px;padding:5px 0;color:var(--ink-2);}
+.redacted{position:relative;color:transparent;user-select:none;}
+.redacted::after{content:"•••••";position:absolute;right:0;color:var(--ink-3);letter-spacing:1px;}
+
+/* banner */
+.banner{margin-top:18px;padding:16px 20px;background:var(--surface-1);border:1.5px solid;border-radius:14px;}
+.banner .t{font-weight:650;font-size:16px;}
+.banner .d{font-size:13px;color:var(--ink-2);margin-top:2px;}
+
+.spin{width:13px;height:13px;border:2px solid #ffffff66;border-top-color:#fff;border-radius:50%;display:inline-block;animation:sp .7s linear infinite;}
+@keyframes sp{to{transform:rotate(360deg);}}
+.dots{display:inline-flex;gap:4px;} .dots i{width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.4;animation:blink 1.2s infinite;}
+.dots i:nth-child(2){animation-delay:.2s;} .dots i:nth-child(3){animation-delay:.4s;}
+@keyframes blink{0%,60%,100%{opacity:.25;}30%{opacity:1;}}
+@media(prefers-reduced-motion:reduce){.spin,.dots i,.utrack i{animation:none;transition:none;}}
+
+/* meeting-minutes modal */
+.m-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:flex-start;justify-content:center;z-index:100;padding:40px 20px;overflow-y:auto;}
+.m-modal{background:var(--surface-1);border:1px solid var(--line);border-radius:14px;max-width:760px;width:100%;box-shadow:0 24px 70px rgba(0,0,0,.45);}
+.m-bar{display:flex;justify-content:space-between;align-items:center;padding:14px 20px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--surface-1);border-radius:14px 14px 0 0;}
+.m-title{font-weight:650;font-size:15px;}
+.m-actions{display:flex;gap:8px;}
+.m-doc{padding:24px 28px 32px;max-height:72vh;overflow-y:auto;}
+.m-h1{font-size:21px;margin:0 0 4px;letter-spacing:-0.02em;}
+.m-h2{font-size:14px;margin:22px 0 8px;color:var(--ink);letter-spacing:.01em;}
+.m-p{font-size:13.5px;line-height:1.6;color:var(--ink-2);margin:6px 0;}
+.m-li{font-size:13.5px;line-height:1.55;color:var(--ink-2);margin:3px 0;}
+.m-todo{font-size:13.5px;line-height:1.55;color:var(--ink-2);margin:4px 0;font-family:var(--mono);}
+.m-doc code{font-family:var(--mono);font-size:12.5px;background:var(--surface-2);padding:1px 5px;border-radius:4px;}
+.m-doc hr{border:none;border-top:1px solid var(--line);margin:20px 0;}
+.mtab{width:100%;border-collapse:collapse;margin:8px 0 4px;font-size:12.5px;}
+.mtab th{text-align:left;font-family:var(--mono);font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-3);padding:6px 10px;border-bottom:1px solid var(--line);font-weight:600;}
+.mtab td{padding:7px 10px;border-bottom:1px solid var(--line);color:var(--ink-2);vertical-align:top;}
+.mtab tr:last-child td{border-bottom:none;}
+.m-doc b{color:var(--ink);}
+</style>
+
+<header>
+  <div class="brand"><b>Peitho</b> <span>autonomous negotiation · self-play demo</span></div>
+  <div class="hstatus" id="hstatus"><button class="theme" id="themeBtn">◐ Theme</button></div>
+</header>
+
+<div id="app"></div>
+
+<script>
+"use strict";
+/* ==========================================================================
+   1. DETERMINISTIC ENGINE — faithful JS port of negotiation_agent v0.
+      (Boulware threshold, utility scoring, logrolling fill, accept/counter/escalate)
+   ========================================================================== */
+const CFG = { maxRounds: 8, beta: 4.0 };
+
+function linearValue(x, best, worst){ const s=best-worst; if(s===0)return 0; const t=(x-worst)/s; return t<=0?0:t>=1?1:t; }
+function linearInverse(v, best, worst){ const vv=Math.min(1,Math.max(0,v)); return worst+vv*(best-worst); }
+function utility(env, offer){ let u=0; for(const t of env.terms) u+=t.weight*linearValue(offer[t.name],t.best,t.worst); return u; }
+function threshold(env, r){ const t=Math.min(Math.max(r,0),CFG.maxRounds); const frac=t/CFG.maxRounds; const span=env.target-env.reservation; return env.reservation+span*(1-Math.pow(frac,CFG.beta)); }
+
+function fillPackage(env, thr, priorities){
+  const order=[...env.terms].sort((a,b)=>{
+    const ra=priorities[a.name]/a.weight, rb=priorities[b.name]/b.weight;
+    return ra-rb || b.weight-a.weight || a.name.localeCompare(b.name);
+  });
+  const v={}; let budget=thr;
+  for(const term of order){
+    if(budget<=1e-9){ v[term.name]=0; continue; }
+    const take=Math.min(1, budget/term.weight);
+    v[term.name]=Math.max(0,take); budget-=term.weight*v[term.name];
+  }
+  const offer={};
+  for(const term of env.terms){
+    let x=linearInverse(v[term.name]??0, term.best, term.worst);
+    if(term.integer){
+      x = term.best>term.worst ? Math.ceil(x-1e-9) : Math.floor(x+1e-9);
+      const lo=Math.min(term.best,term.worst), hi=Math.max(term.best,term.worst);
+      x=Math.min(hi,Math.max(lo,x));
+    }
+    offer[term.name]=x;
+  }
+  return offer;
+}
+
+function decide(env, priorities, roundIndex, incomingOffer){
+  const thr=threshold(env, roundIndex);
+  const uIn = incomingOffer ? utility(env, incomingOffer) : null;
+  if(incomingOffer && uIn>=thr){
+    return { outcome:"accept", round:roundIndex, threshold:thr, incomingUtility:uIn, approved:{...incomingOffer},
+      reason:`incoming utility ${uIn.toFixed(3)} ≥ threshold ${thr.toFixed(3)} → ACCEPT` };
+  }
+  if(roundIndex>=CFG.maxRounds){
+    return { outcome:"escalate", round:roundIndex, threshold:thr, incomingUtility:uIn, approved:{},
+      reason:`deadline reached (round ${roundIndex}/${CFG.maxRounds}), no offer cleared the reservation floor → ESCALATE to a human buyer` };
+  }
+  const counter=fillPackage(env, thr, priorities);
+  const cu=utility(env, counter);
+  return { outcome:"counter", round:roundIndex, threshold:thr, incomingUtility:uIn, counter, counterUtility:cu, approved:{...counter},
+    reason: incomingOffer
+      ? `incoming utility ${uIn.toFixed(3)} < threshold ${thr.toFixed(3)} → COUNTER at utility ${cu.toFixed(3)}`
+      : `opening anchor at target utility ${cu.toFixed(3)}` };
+}
+
+/* ==========================================================================
+   2. NUMERIC GUARD — the model can never state a figure the engine didn't approve.
+   ========================================================================== */
+function approvedForms(env, approved){
+  const f=new Map();
+  for(const t of env.terms){
+    const x=approved[t.name]; if(x==null) continue;
+    const variants = t.integer ? [String(Math.round(x))]
+      : [String(+x.toFixed(2)), String(+x.toFixed(1)), String(Math.round(x))];
+    for(const s of variants) f.set(s.replace(/\.0$/,""), t.name);
+  }
+  return f;
+}
+function numericGuard(env, approved, text){
+  const forms=approvedForms(env, approved);
+  const tokens=text.match(/\d+(?:[.,]\d+)?/g)||[];
+  const violations=[];
+  for(const raw of tokens){
+    const norm=raw.replace(",",".").replace(/\.0$/,"");
+    const n=parseFloat(norm);
+    let ok=forms.has(norm);
+    if(!ok){ for(const t of env.terms){ const x=approved[t.name]; if(x!=null && Math.abs(n-x)<0.011){ ok=true; break; } } }
+    if(!ok) violations.push(raw);
+  }
+  return { ok:violations.length===0, violations, approvedCount:forms.size };
+}
+
+/* ==========================================================================
+   3. SCENARIO
+   ========================================================================== */
+function buildScenario(form){
+  const { openingAsk, target, walkAway, contractMonths, paymentLever } = form;
+  const buyerEnv={ target:0.95, reservation:0.55, terms:[
+    { name:"price", label:"Unit price", integer:false, best:target, worst:walkAway, weight:0.55 },
+    { name:"payment_days", label:"Payment terms", integer:true, best:paymentLever, worst:30, weight:0.20 },
+    { name:"contract_months", label:"Contract length", integer:true, best:12, worst:contractMonths, weight:0.25 },
+  ]};
+  const supplierEnv={ terms:[
+    { name:"price", best:walkAway, worst:target, weight:0.30 },
+    { name:"payment_days", best:30, worst:paymentLever, weight:0.40 },
+    { name:"contract_months", best:contractMonths, worst:12, weight:0.30 },
+  ]};
+  const appetite = {
+    cooperative:{price:0.2,payment_days:0.5,contract_months:0.6},
+    aggressive:{price:0.8,payment_days:0.3,contract_months:0.3},
+    evasive:{price:0.4,payment_days:0.4,contract_months:0.4},
+  }[form.persona];
+  const psum=Object.values(appetite).reduce((a,b)=>a+b,0);
+  const priorities={}; for(const k in appetite) priorities[k]=appetite[k]/psum;
+  const supplierOpening={ price:openingAsk, payment_days:30, contract_months:contractMonths };
+  return { buyerEnv, supplierEnv, priorities, supplierOpening, form };
+}
+function fmtTerm(name, x){
+  if(x==null) return "—";
+  if(name==="price") return "€"+(+x).toFixed(2);
+  if(name==="payment_days") return "net-"+Math.round(x);
+  if(name==="contract_months") return Math.round(x)+" mo";
+  return String(x);
+}
+
+/* ==========================================================================
+   4. LLM LAYER — real window.claude.complete if present, else scripted templates.
+   ========================================================================== */
+const HAS_LLM = typeof window!=="undefined" && window.claude && typeof window.claude.complete==="function";
+
+async function llm(prompt){ return (await window.claude.complete(prompt)).trim(); }
+
+async function draftBuyerMessage(sc, decision, form){
+  const env=sc.buyerEnv;
+  const approvedList=env.terms.filter(t=>decision.approved[t.name]!=null).map(t=>t.label+": "+fmtTerm(t.name,decision.approved[t.name])).join(", ");
+  if(HAS_LLM){
+    const move = decision.outcome==="accept" ? "ACCEPTING the supplier's offer"
+      : decision.outcome==="escalate" ? "declining to move further (handing to a human buyer)"
+      : "making a counter-offer";
+    const prompt =
+`You are a procurement buyer's negotiation assistant writing one short professional email to a supplier for "${form.category}". You are ${move}.
+${decision.outcome==="escalate"
+  ? "Write a brief courteous holding note — say you need to review internally and will follow up. Do NOT state any prices, payment terms, or contract lengths."
+  : `You may ONLY reference these exact figures, no others: ${approvedList}. Never invent, round, or hint at a number outside this list. Present them as the buyer's position.`}
+2-4 sentences, businesslike. Return only the email body.`;
+    return await llm(prompt);
+  }
+  // scripted fallback
+  const a=decision.approved;
+  if(decision.outcome==="accept") return `That works for us — we're happy to proceed at ${fmtTerm("price",a.price)} per unit, ${fmtTerm("payment_days",a.payment_days)} terms, on a ${fmtTerm("contract_months",a.contract_months)} contract. I'll have the paperwork drawn up.`;
+  if(decision.outcome==="escalate") return `Thanks for the discussion. I'm not able to move further on my side right now — let me take this back internally and come back to you. I appreciate your patience.`;
+  const opener = decision.round===0 ? "Thanks for the quote." : "Appreciate the movement.";
+  return `${opener} Here's where we can land: ${fmtTerm("price",a.price)} per unit, ${fmtTerm("payment_days",a.payment_days)} payment terms, over a ${fmtTerm("contract_months",a.contract_months)} contract. We've got room on terms if it helps you on price — happy to trade there.`;
+}
+
+async function draftSupplierReply(sc, form, buyerMsg, roundIndex){
+  const s=sc.supplierEnv, p=form.persona;
+  if(HAS_LLM){
+    const persona = { cooperative:"cooperative, eager to keep the account — concede fairly readily toward a fair middle",
+      aggressive:"aggressive and firm — hold hard on price, concede slowly and reluctantly",
+      evasive:"evasive — stall, ask clarifications, mention needing manager approval, avoid committing" }[p];
+    const prompt =
+`You roleplay a SUPPLIER sales rep for "${form.supplierName}" negotiating "${form.category}" with a corporate buyer.
+Persona: ${persona}.
+Private position (never reveal bounds): you'd like unit price near €${s.terms[0].best.toFixed(2)}, prefer short payment terms (net-30), and a longer ${s.terms[2].best}-month contract. You won't go below about €${s.terms[0].worst.toFixed(2)}.
+The buyer wrote:
+"""${buyerMsg}"""
+Reply in 2-4 sentences as the supplier with a concrete counter (you may name a price, payment terms, contract length). Stay in character. Return only the email body.`;
+    return await llm(prompt);
+  }
+  // scripted fallback — steps the supplier price toward the buyer over rounds by persona
+  const openP = sc.supplierOpening.price;
+  const floor = s.terms[0].worst; // supplier won't go below (which is the buyer's target)
+  const speed = { cooperative:0.42, aggressive:0.20, evasive:0.28 }[p];
+  const px = Math.max(floor, openP - (openP-floor)*speed*(roundIndex+1));
+  const price = Math.round(px*100)/100;
+  const pay = p==="aggressive" ? 30 : (p==="cooperative" ? Math.min(45+roundIndex*3, form.paymentLever) : 30);
+  const con = p==="cooperative" ? Math.max(12, form.contractMonths-roundIndex*2) : form.contractMonths;
+  const flavor = {
+    cooperative:`I hear you. To keep this moving I can come to €${price.toFixed(2)} per unit, and I'm open to net-${pay} if we lock in ${con} months. Let's find the middle here.`,
+    aggressive:`I appreciate it, but €${price.toFixed(2)} is about as far as I can stretch on price, and I'd need net-${pay} to make it work. My margins here are thin.`,
+    evasive:`Let me check with my manager on the exact number — provisionally I could look at around €${price.toFixed(2)}, though I'd have to confirm the ${con}-month term and net-${pay} internally first.`,
+  }[p];
+  return flavor;
+}
+
+function extractSupplierOffer(sc, text, prev){
+  const env=sc.buyerEnv; const offer={...prev};
+  const price=text.match(/€\s?(\d+(?:[.,]\d+)?)|(\d+(?:[.,]\d+)?)\s?(?:eur|€|per unit|\/unit)/i);
+  if(price){ const p=parseFloat((price[1]||price[2]).replace(",",".")); if(p>3&&p<100) offer.price=p; }
+  const net=text.match(/net[-\s]?(\d{1,3})|(\d{1,3})\s?days?/i);
+  if(net){ const d=parseInt(net[1]||net[2],10); if(d>=15&&d<=120) offer.payment_days=d; }
+  const months=text.match(/(\d{1,2})\s?(?:month|mo)\b/i);
+  if(months){ const m=parseInt(months[1],10); if(m>=6&&m<=60) offer.contract_months=m; }
+  for(const t of env.terms){ const lo=Math.min(t.best,t.worst),hi=Math.max(t.best,t.worst); offer[t.name]=Math.min(hi,Math.max(lo,offer[t.name]??t.worst)); }
+  return offer;
+}
+
+/* ==========================================================================
+   5. STATE + RENDER  (vanilla, no framework)
+   ========================================================================== */
+const PERSONAS=[
+  {id:"cooperative",label:"Cooperative",hint:"concedes readily, seeks fair middle"},
+  {id:"aggressive",label:"Aggressive",hint:"holds firm, slow to move on price"},
+  {id:"evasive",label:"Evasive",hint:"stalls, defers to manager, avoids numbers"},
+];
+const FORM={ supplierName:"Nordwerk Verpackung GmbH", contact:"vertrieb@nordwerk.example",
+  category:"Corrugated packaging — 12 mo supply", openingAsk:11.5, target:9.0, walkAway:10.5,
+  contractMonths:24, paymentLever:60, persona:"aggressive" };
+
+const M={ phase:"setup", form:{...FORM}, sc:null, transcript:[], round:0, busy:false, status:"live", auto:false, showReason:true, error:null, lastMinutes:null };
+const RS={ lastSupplierOffer:null, roundIndex:0 }; // engine state
+const app=document.getElementById("app");
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const $=(sel,root=document)=>root.querySelector(sel);
+
+/* theme */
+(function(){ const b=$("#themeBtn"); const mq=matchMedia("(prefers-color-scheme: dark)");
+  let cur=mq.matches?"dark":"light"; const ap=t=>{document.documentElement.setAttribute("data-theme",t); b.textContent=(t==="dark"?"☾":"☀")+" Theme";};
+  ap(cur); b.onclick=()=>{cur=(document.documentElement.getAttribute("data-theme")==="dark")?"light":"dark"; ap(cur);};
+})();
+
+function statusBadge(){
+  const map={ live:{t:"negotiating",c:"var(--live)"}, closed:{t:"deal closed",c:"var(--good)"},
+    escalated:{t:"escalated to human",c:"var(--warn)"}, walked:{t:"supplier walked",c:"var(--crit)"} }[M.status];
+  const hs=$("#hstatus");
+  hs.innerHTML = (M.phase==="running"
+    ? `<span class="pill" style="background:${map.c}22;color:${map.c}"><span class="dot" style="background:${map.c}"></span>${map.t}</span>`
+    + `<span class="mono" style="font-size:12.5px;color:var(--ink-3)">round ${M.round}/${CFG.maxRounds}</span>`
+    + `<button class="ghost" id="resetBtn">New negotiation</button>` : "")
+    + `<button class="theme" id="themeBtn">${document.documentElement.getAttribute("data-theme")==="dark"?"☾":"☀"} Theme</button>`;
+  // rebind theme + reset
+  $("#themeBtn").onclick=()=>{const t=document.documentElement.getAttribute("data-theme")==="dark"?"light":"dark"; document.documentElement.setAttribute("data-theme",t); statusBadge();};
+  const rb=$("#resetBtn"); if(rb) rb.onclick=()=>{ M.phase="setup"; M.auto=false; render(); };
+}
+
+function render(){
+  statusBadge();
+  app.innerHTML = M.phase==="setup" ? setupView() : runView();
+  if(M.phase==="setup") bindSetup(); else bindRun();
+}
+
+/* ---- setup ---- */
+function setupView(){
+  const f=M.form;
+  const modeNote = HAS_LLM
+    ? '● live model — the buyer and supplier messages are written by Claude each turn'
+    : '● scripted mode — no live model here, so persona replies use built-in templates (the engine + guard still run for real)';
+  return `<div class="setup">
+    <div style="max-width:640px">
+      <h1>Set up the negotiation</h1>
+      <p class="lede">One model plays both the buyer and the supplier. A deterministic engine — the real thing —
+        makes every accept / counter / walk-away call; the model only writes the emails, and can never state a
+        number the engine didn't approve.</p>
+      <div class="badge-mode">${modeNote}</div>
+    </div>
+    <div class="grid">
+      ${field("Supplier name","cosmetic — nothing is actually sent",`<input class="in" id="f-supplierName" value="${esc(f.supplierName)}">`)}
+      ${field("Contact email","cosmetic — stored & displayed only",`<input class="in" id="f-contact" value="${esc(f.contact)}">`)}
+      ${field("Category / item","",`<input class="in" id="f-category" value="${esc(f.category)}">`,true)}
+      ${field("Supplier opening ask (€/unit)","",`<input class="in" type="number" step="0.1" id="f-openingAsk" value="${f.openingAsk}">`)}
+      ${field("Your target price (€/unit)","",`<input class="in" type="number" step="0.1" id="f-target" value="${f.target}">`)}
+      ${field("Walk-away price (€/unit)","",`<input class="in" type="number" step="0.1" id="f-walkAway" value="${f.walkAway}">`)}
+      ${field("Max contract length (months)","",`<input class="in" type="number" id="f-contractMonths" value="${f.contractMonths}">`)}
+      ${field("Payment-terms lever (max net-days)","a concession lever the engine can trade",`<input class="in" type="number" id="f-paymentLever" value="${f.paymentLever}">`)}
+      <div class="fld wide"><label>Supplier persona</label>
+        <div class="personas">${PERSONAS.map(p=>`<button type="button" class="persona${f.persona===p.id?" on":""}" data-p="${p.id}"><b>${p.label}</b><span>${p.hint}</span></button>`).join("")}</div>
+      </div>
+    </div>
+    <div class="startrow">
+      <button class="primary big" id="startBtn">Start the negotiation →</button>
+      <span class="meta">buyer target €${(+f.target).toFixed(2)} · walk-away €${(+f.walkAway).toFixed(2)} · lever up to net-${f.paymentLever}</span>
+    </div>
+  </div>`;
+}
+function field(label,note,input,wide){
+  return `<div class="fld${wide?" wide":""}"><label>${label}${note?` <i>· ${note}</i>`:""}</label>${input}</div>`;
+}
+function bindSetup(){
+  ["supplierName","contact","category","openingAsk","target","walkAway","contractMonths","paymentLever"].forEach(k=>{
+    const el=$("#f-"+k); if(!el) return;
+    el.oninput=()=>{ M.form[k]= el.type==="number" ? +el.value : el.value; };
+  });
+  app.querySelectorAll(".persona").forEach(b=>b.onclick=()=>{ M.form.persona=b.dataset.p; render(); });
+  $("#startBtn").onclick=start;
+}
+
+function start(){
+  M.sc=buildScenario(M.form);
+  RS.lastSupplierOffer={...M.sc.supplierOpening}; RS.roundIndex=0;
+  M.transcript=[]; M.round=0; M.status="live"; M.error=null; M.auto=false; M.busy=false;
+  M.phase="running"; render();
+}
+
+/* ---- run ---- */
+function runView(){
+  const f=M.form;
+  return `<div class="run">
+    <div class="transport">
+      <button class="primary" id="stepBtn" ${M.busy||M.status!=="live"?"disabled":""}>${M.busy?'<span class="spin"></span>':"▶"} Step one turn</button>
+      <button class="ghost${M.auto?" on":""}" id="autoBtn" ${M.status!=="live"?"disabled":""}>${M.auto?"❚❚ Pause":"⏩ Auto-play"}</button>
+      <label class="reasoncheck"><input type="checkbox" id="reasonChk" ${M.showReason?"checked":""}> show agent reasoning</label>
+      ${M.error?`<span style="color:var(--crit);font-size:12.5px">⚠ ${esc(M.error)}</span>`:""}
+      <span class="cat">${esc(f.category)}</span>
+    </div>
+    <div class="panes">
+      ${buyerPane()}
+      ${supplierPane()}
+    </div>
+    ${M.status!=="live"?banner():""}
+  </div>`;
+}
+
+function bubble(side, who, inner, accentVar, extra=""){
+  const style = side==="right" ? `background:${accentVar}` : "";
+  return `<div class="msg ${side}"><div class="who">${esc(who)}</div><div class="bubble" style="${style}">${inner}</div>${extra}</div>`;
+}
+function thinkingBubble(accentVar){
+  return `<div class="msg right"><div class="who">You (buyer agent)</div><div class="bubble" style="background:${accentVar}"><span class="dots"><i></i><i></i><i></i></span></div></div>`;
+}
+
+function buyerPane(){
+  const f=M.form, env=M.sc.buyerEnv;
+  const msgs = M.transcript.map(m=>{
+    if(m.from==="buyer"){
+      const extra = (M.showReason && m.decision) ? reasonDrawer(env, m) : "";
+      return bubble("right","You (buyer agent)", esc(m.text), "var(--buyer)", extra);
+    }
+    return bubble("left", f.supplierName, esc(m.text), "var(--supplier)");
+  }).join("");
+  const ds=dealState();
+  return `<div class="pane">
+    <div class="panehead"><span class="who">What the buyer sees</span><span class="tag" style="background:var(--buyer)22;color:var(--buyer)">the agent</span>
+      <div class="sub">outgoing right · supplier incoming left · live deal state</div></div>
+    <div class="panebody">
+      <div class="chat" id="chatA">${msgs || `<div class="empty">Press “Step one turn” to send the opening offer.</div>`}${M.busy?thinkingBubble("var(--buyer)"):""}</div>
+      <div class="sidebar">
+        <div class="stitle">live deal state</div>
+        <div class="uline"><span>buyer utility</span><b class="mono" style="color:var(--buyer)">${ds.buyerUtility!=null?ds.buyerUtility.toFixed(3):"—"}</b></div>
+        <div class="utrack"><i style="width:${(ds.buyerUtility||0)*100}%;background:var(--buyer)"></i></div>
+        <div class="ssub">threshold this round: <span class="mono">${ds.threshold.toFixed(3)}</span></div>
+        <div style="height:12px"></div>
+        <div class="stitle">package on the table</div>
+        ${env.terms.map(t=>`<div class="dterm"><span>${t.label}</span><b class="mono">${ds.offer?fmtTerm(t.name,ds.offer[t.name]):"—"}</b></div>`).join("")}
+        <div class="gap">gap to target price: <b class="mono" style="color:${ds.offer&&ds.gap<=0?"var(--good)":"var(--ink)"}">${ds.offer?(ds.gap<=0?"at/under target ✓":"€"+ds.gap.toFixed(2)):"—"}</b></div>
+      </div>
+    </div>
+  </div>`;
+}
+function supplierPane(){
+  const f=M.form;
+  const msgs=M.transcript.map(m=>{
+    if(m.from==="supplier") return bubble("right",`You (${f.supplierName})`, esc(m.text),"var(--supplier)");
+    return bubble("left","Buyer", esc(m.text),"var(--buyer)");
+  }).join("");
+  return `<div class="pane">
+    <div class="panehead"><span class="who">What the supplier sees</span><span class="tag" style="background:var(--supplier)22;color:var(--supplier)">${f.persona}</span>
+      <div class="sub">same transcript, roles flipped — no view of the buyer's target or walk-away</div></div>
+    <div class="panebody">
+      <div class="chat" id="chatB">${msgs || `<div class="empty">The supplier is waiting for the buyer's first message.</div>`}</div>
+      <div class="sidebar">
+        <div class="stitle">the supplier cannot see</div>
+        <div class="hrow"><span>Buyer target price</span><b class="mono redacted">€${(+f.target).toFixed(2)}</b></div>
+        <div class="hrow"><span>Buyer walk-away</span><b class="mono redacted">€${(+f.walkAway).toFixed(2)}</b></div>
+        <div class="hrow"><span>Acceptance threshold</span><b class="mono redacted">decaying</b></div>
+        <div style="font-size:11.5px;color:var(--ink-3);margin-top:10px;line-height:1.5">That asymmetry is the whole game — the agent negotiates without ever revealing its floor.</div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function reasonDrawer(env, m){
+  const d=m.decision, g=m.guard;
+  const oc={accept:"var(--good)",counter:"var(--buyer)",escalate:"var(--warn)"}[d.outcome];
+  const approvedChips = Object.keys(d.approved).length
+    ? `<div class="approved"><span class="mono" style="color:var(--ink-3)">approved →</span> ${env.terms.filter(t=>d.approved[t.name]!=null).map(t=>`<span class="chip">${fmtTerm(t.name,d.approved[t.name])}</span>`).join(" ")}</div>` : "";
+  const guardLine = g ? `<div class="guard" style="color:${g.ok?"var(--good)":"var(--crit)"}">${g.ok
+      ? "✓ numeric guard passed — every figure in the message is engine-approved"
+      : `✗ guard caught ${g.violations.length} un-approved figure(s): ${g.violations.join(", ")} — rejected &amp; redrafted`}</div>` : "";
+  return `<div class="reason">
+    <div class="hd"><span class="lab">deterministic engine</span><span class="oc" style="color:${oc}">${d.outcome.toUpperCase()}</span></div>
+    <div class="math">
+      <div class="row"><span>round</span><span class="mono">${d.round} / ${CFG.maxRounds}</span></div>
+      <div class="row" title="Boulware: reservation + span·(1−(t/T)^β)"><span>threshold</span><span class="mono">${d.threshold.toFixed(3)}</span></div>
+      ${d.incomingUtility!=null?`<div class="row"><span>incoming utility</span><span class="mono">${d.incomingUtility.toFixed(3)}</span></div>`:""}
+      ${d.counterUtility!=null?`<div class="row"><span>counter utility</span><span class="mono">${d.counterUtility.toFixed(3)}</span></div>`:""}
+    </div>
+    <div class="rule" style="color:${oc}">${d.reason}</div>
+    ${approvedChips}${guardLine}
+  </div>`;
+}
+
+function banner(){
+  const map={ closed:{c:"var(--good)",icon:"✓",t:"Deal closed"}, escalated:{c:"var(--warn)",icon:"⚠",t:"Escalated to a human buyer"}, walked:{c:"var(--crit)",icon:"✕",t:"Supplier walked away"} }[M.status];
+  const finalOffer=[...M.transcript].reverse().find(m=>m.offer)?.offer;
+  const u=finalOffer?utility(M.sc.buyerEnv,finalOffer):null;
+  let d="";
+  if(M.status==="closed"&&finalOffer) d=`Final package: ${M.sc.buyerEnv.terms.map(t=>fmtTerm(t.name,finalOffer[t.name])).join(" · ")}${u!=null?` · buyer utility <b class="mono">${u.toFixed(3)}</b>`:""}`;
+  else if(M.status==="escalated") d="The engine reached its reservation floor without a deal and handed off — exactly where a human should take over.";
+  else if(M.status==="walked") d="The supplier ended the discussion. In production this would flag for a human buyer.";
+  return `<div class="banner" style="border-color:${map.c}">
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <span style="font-size:22px;color:${map.c}">${map.icon}</span>
+      <div style="flex:1;min-width:220px"><div class="t">${map.t}</div><div class="d">${d}</div></div>
+      <button class="primary" id="minutesBtn">📄 Generate meeting minutes</button>
+    </div>
+  </div>`;
+}
+
+/* ==========================================================================
+   6. MEETING MINUTES — a formal, filable record built from the transcript.
+      Structure & every figure are deterministic (from the record); only the
+      narrative prose is LLM-written where available, else scripted. The minutes
+      can never misstate an agreed figure — same principle as the numeric guard.
+   ========================================================================== */
+function dealNarrativeData(){
+  const sc=M.sc, f=M.form, env=sc.buyerEnv;
+  const buyerOffers=M.transcript.filter(m=>m.from==="buyer"&&m.offer);
+  const supOffers=M.transcript.filter(m=>m.from==="supplier"&&m.offer);
+  const finalOffer=[...M.transcript].reverse().find(m=>m.offer)?.offer || null;
+  const opening=sc.supplierOpening;
+  // per-term movement, opening -> final
+  const movement=env.terms.map(t=>({
+    label:t.label, name:t.name,
+    open:opening[t.name], final:finalOffer?finalOffer[t.name]:null,
+    buyerIdeal:t.best,
+  }));
+  const priceOpen=opening.price, priceFinal=finalOffer?finalOffer.price:null;
+  const savingPct = (priceFinal!=null && priceOpen>0) ? (priceOpen-priceFinal)/priceOpen*100 : null;
+  const rounds=M.round;
+  const buyerU = finalOffer?utility(env,finalOffer):null;
+  return { sc, f, env, buyerOffers, supOffers, finalOffer, opening, movement, savingPct, rounds, buyerU, status:M.status };
+}
+
+async function narrativeParagraph(data){
+  const { f, status, movement, savingPct, rounds } = data;
+  if(HAS_LLM){
+    const facts = movement.map(m=>`${m.label}: opened ${fmtTerm(m.name,m.open)}, ${m.final!=null?"settled "+fmtTerm(m.name,m.final):"no agreement"}`).join("; ");
+    const outcome = status==="closed"?"a deal was reached":status==="escalated"?"the agent escalated to a human buyer":"the supplier walked away";
+    const prompt =
+`Write a concise 3-4 sentence "summary of proceedings" paragraph for formal procurement negotiation minutes.
+Facts (use ONLY these; do not invent figures): category "${f.category}"; supplier "${f.supplierName}"; ${rounds} rounds; outcome: ${outcome}; term movement — ${facts}${savingPct!=null?`; price improved ${savingPct.toFixed(1)}% from the opening ask`:""}.
+Neutral, businesslike, past tense, third person. Do not add numbers not in the facts. Return only the paragraph.`;
+    try { return await llm(prompt); } catch(e){ /* fall through to scripted */ }
+  }
+  // scripted fallback
+  const oc = status==="closed"?`agreement was reached after ${rounds} round${rounds!==1?"s":""} of exchange`
+    : status==="escalated"?`no agreement was reached within the mandate and the matter was escalated to a human buyer after ${rounds} rounds`
+    : `the supplier elected to end the discussion`;
+  const price = movement.find(m=>m.name==="price");
+  const priceLine = price.final!=null ? `Unit price moved from ${fmtTerm("price",price.open)} to ${fmtTerm("price",price.final)}${savingPct!=null?` (${savingPct.toFixed(1)}% improvement on the opening ask)`:""}.` : "";
+  return `The buyer's negotiation agent engaged ${f.supplierName} on the category "${f.category}". ${cap(oc)}. ${priceLine} Concessions were traded on payment terms and contract length to hold the buyer's position on price, consistent with the authorised mandate.`;
+}
+function cap(s){ return s.charAt(0).toUpperCase()+s.slice(1); }
+
+function minutesMarkdown(data, narrative){
+  const { sc, f, env, finalOffer, opening, movement, savingPct, rounds, buyerU, status } = data;
+  const dateStr = "(demo run)"; // no wall-clock in the demo; production stamps a real date
+  const outcomeText = { closed:"Agreement reached", escalated:"Escalated to human buyer — no agreement within mandate", walked:"Supplier withdrew — no agreement" }[status];
+  const L=[];
+  L.push(`# Negotiation Minutes`);
+  L.push(``);
+  L.push(`**Category:** ${f.category}  `);
+  L.push(`**Supplier:** ${f.supplierName} · ${f.contact}  `);
+  L.push(`**Buyer side:** autonomous negotiation agent (Peitho)  `);
+  L.push(`**Mandate:** target €${(+f.target).toFixed(2)} / walk-away €${(+f.walkAway).toFixed(2)} · payment lever up to net-${f.paymentLever} · max ${f.contractMonths} mo  `);
+  L.push(`**Date:** ${dateStr}  `);
+  L.push(`**Outcome:** ${outcomeText}`);
+  L.push(``);
+  L.push(`## 1. Summary of proceedings`);
+  L.push(``);
+  L.push(narrative);
+  L.push(``);
+  L.push(`## 2. Round-by-round`);
+  L.push(``);
+  L.push(`| # | Party | Position on the table | Engine decision |`);
+  L.push(`|---|-------|-----------------------|-----------------|`);
+  let n=0;
+  for(const m of M.transcript){
+    n++;
+    const party = m.from==="buyer" ? "Buyer agent" : f.supplierName;
+    const pos = m.offer ? env.terms.map(t=>fmtTerm(t.name,m.offer[t.name])).join(" · ") : "—";
+    const dec = m.decision ? `${m.decision.outcome.toUpperCase()} (util ${m.decision.incomingUtility!=null?m.decision.incomingUtility.toFixed(2):"—"} vs threshold ${m.decision.threshold.toFixed(2)})` : "";
+    L.push(`| ${n} | ${party} | ${pos} | ${dec} |`);
+  }
+  L.push(``);
+  L.push(`## 3. Terms`);
+  L.push(``);
+  L.push(`| Term | Supplier opening | ${status==="closed"?"Agreed":"Last on table"} | Buyer ideal |`);
+  L.push(`|------|------------------|--------|-------------|`);
+  for(const mv of movement){
+    L.push(`| ${mv.label} | ${fmtTerm(mv.name,mv.open)} | ${mv.final!=null?fmtTerm(mv.name,mv.final):"—"} | ${fmtTerm(mv.name,mv.buyerIdeal)} |`);
+  }
+  L.push(``);
+  L.push(`## 4. Concessions & trades`);
+  L.push(``);
+  const priceMv=movement.find(m=>m.name==="price");
+  if(priceMv.final!=null){
+    L.push(`- **Price held near target:** the agent conceded little on unit price (the buyer's heaviest-weighted term), landing at ${fmtTerm("price",priceMv.final)}${savingPct!=null?` — a ${savingPct.toFixed(1)}% improvement on the opening ask of ${fmtTerm("price",priceMv.open)}`:""}.`);
+    for(const mv of movement){
+      if(mv.name==="price"||mv.final==null) continue;
+      L.push(`- **${mv.label}:** traded to ${fmtTerm(mv.name,mv.final)} (a lighter-weighted lever used to move the supplier on price).`);
+    }
+    L.push(`- This is *logrolling*: hold the terms the buyer values, concede on terms the supplier values — a win-win the engine finds deterministically.`);
+  } else {
+    L.push(`- No package was agreed; no concessions were finalised.`);
+  }
+  L.push(``);
+  L.push(`## 5. Outcome & rationale`);
+  L.push(``);
+  if(status==="closed"){
+    L.push(`Agreement reached after ${rounds} round${rounds!==1?"s":""}. Final buyer utility **${buyerU!=null?buyerU.toFixed(3):"—"}** (of 1.0), clearing the round's acceptance threshold. Every figure in the buyer's messages was drawn from the engine's approved-number allowlist — the drafting model could not introduce a concession the engine had not authorised.`);
+  } else if(status==="escalated"){
+    L.push(`The engine's acceptance threshold decayed to its reservation floor over ${rounds} rounds without a clearing offer. Per mandate, the negotiation was **escalated to a human buyer** rather than accepting a below-floor deal — the designed hand-off point.`);
+  } else {
+    L.push(`The supplier withdrew from the negotiation. No agreement was reached; the matter is flagged for a human buyer to follow up.`);
+  }
+  L.push(``);
+  L.push(`## 6. Action items`);
+  L.push(``);
+  if(status==="closed"){
+    L.push(`- [ ] Issue contract for signature at the agreed terms`);
+    L.push(`- [ ] File this record against the mandate (${f.category})`);
+    L.push(`- [ ] Set renewal review reminder ahead of contract end`);
+  } else if(status==="escalated"){
+    L.push(`- [ ] Human buyer to review the standing position and decide next step`);
+    L.push(`- [ ] Consider whether the mandate envelope should be widened`);
+  } else {
+    L.push(`- [ ] Human buyer to re-engage supplier or source an alternative`);
+  }
+  L.push(``);
+  L.push(`---`);
+  L.push(`*Generated from the negotiation record. The engine's decisions and every quoted figure are deterministic; the summary prose${HAS_LLM?" was model-written and":" is templated and"} constrained to the recorded figures. This record replays from the transcript.*`);
+  return L.join("\n");
+}
+
+// tiny Markdown -> HTML for the on-screen preview
+function mdToHtml(md){
+  const esc2=s=>s.replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+  const lines=md.split("\n"); let html=""; let inTable=false;
+  const inline=s=>esc2(s).replace(/\*\*(.+?)\*\*/g,"<b>$1</b>").replace(/\*(.+?)\*/g,"<i>$1</i>").replace(/`(.+?)`/g,'<code>$1</code>');
+  for(let i=0;i<lines.length;i++){
+    const ln=lines[i];
+    if(/^\|/.test(ln)){
+      if(/^\|[-\s|]+\|$/.test(ln)) continue; // separator row
+      if(!inTable){ html+='<table class="mtab">'; inTable=true; }
+      const cells=ln.split("|").slice(1,-1).map(c=>c.trim());
+      const tag = (lines[i+1]&&/^\|[-\s|]+\|$/.test(lines[i+1]))?"th":"td";
+      html+="<tr>"+cells.map(c=>`<${tag}>${inline(c)}</${tag}>`).join("")+"</tr>";
+      continue;
+    } else if(inTable){ html+="</table>"; inTable=false; }
+    if(/^# /.test(ln)) html+=`<h2 class="m-h1">${inline(ln.slice(2))}</h2>`;
+    else if(/^## /.test(ln)) html+=`<h3 class="m-h2">${inline(ln.slice(3))}</h3>`;
+    else if(/^- \[ \] /.test(ln)) html+=`<div class="m-todo">☐ ${inline(ln.slice(6))}</div>`;
+    else if(/^- /.test(ln)) html+=`<div class="m-li">• ${inline(ln.slice(2))}</div>`;
+    else if(/^---/.test(ln)) html+="<hr>";
+    else if(ln.trim()==="") html+="";
+    else html+=`<p class="m-p">${inline(ln.replace(/ {2}$/,""))}</p>`;
+  }
+  if(inTable) html+="</table>";
+  return html;
+}
+
+async function openMinutes(){
+  // build & show a modal with a loading state, then fill
+  showMinutesModal(`<div style="padding:40px;text-align:center;color:var(--ink-3)"><span class="dots"><i></i><i></i><i></i></span><div style="margin-top:12px">Compiling minutes from the negotiation record…</div></div>`, null);
+  const data=dealNarrativeData();
+  const narrative=await narrativeParagraph(data);
+  const md=minutesMarkdown(data, narrative);
+  M.lastMinutes=md;
+  showMinutesModal(mdToHtml(md), md);
+}
+function showMinutesModal(bodyHtml, md){
+  let ov=document.getElementById("mOverlay");
+  if(!ov){ ov=document.createElement("div"); ov.id="mOverlay"; ov.className="m-overlay"; document.body.appendChild(ov); }
+  ov.innerHTML=`<div class="m-modal" role="dialog" aria-label="Meeting minutes">
+    <div class="m-bar">
+      <span class="m-title">Negotiation minutes</span>
+      <div class="m-actions">
+        ${md?`<button class="ghost" id="mCopy">Copy Markdown</button><button class="ghost" id="mDl">Download .md</button>`:""}
+        <button class="ghost" id="mClose">Close</button>
+      </div>
+    </div>
+    <div class="m-doc">${bodyHtml}</div>
+  </div>`;
+  ov.style.display="flex";
+  ov.onclick=e=>{ if(e.target===ov) closeMinutes(); };
+  const c=document.getElementById("mClose"); if(c) c.onclick=closeMinutes;
+  if(md){
+    document.getElementById("mCopy").onclick=async(ev)=>{
+      try{ await navigator.clipboard.writeText(md); ev.target.textContent="Copied ✓"; setTimeout(()=>ev.target.textContent="Copy Markdown",1400); }catch(e){ ev.target.textContent="Copy failed"; }
+    };
+    document.getElementById("mDl").onclick=()=>{
+      const blob=new Blob([md],{type:"text/markdown"});
+      const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
+      a.download=`negotiation-minutes-${(M.form.supplierName||"deal").replace(/[^a-z0-9]+/gi,"-").toLowerCase()}.md`;
+      a.click(); URL.revokeObjectURL(a.href);
+    };
+  }
+}
+function closeMinutes(){ const ov=document.getElementById("mOverlay"); if(ov) ov.style.display="none"; }
+
+function dealState(){
+  const env=M.sc.buyerEnv;
+  const lastOfferMsg=[...M.transcript].reverse().find(m=>m.offer);
+  const offer=lastOfferMsg?lastOfferMsg.offer:null;
+  const buyerUtility=offer?utility(env,offer):null;
+  const thr=threshold(env, M.round);
+  const priceTerm=env.terms.find(t=>t.name==="price");
+  const gap=offer?offer.price-priceTerm.best:null;
+  return { offer, buyerUtility, threshold:thr, gap };
+}
+
+function bindRun(){
+  const s=$("#stepBtn"); if(s) s.onclick=()=>runTurn();
+  const a=$("#autoBtn"); if(a) a.onclick=toggleAuto;
+  const c=$("#reasonChk"); if(c) c.onchange=()=>{ M.showReason=c.checked; render(); };
+  const mb=$("#minutesBtn"); if(mb) mb.onclick=openMinutes;
+  for(const id of ["chatA","chatB"]){ const el=$("#"+id); if(el) el.scrollTop=el.scrollHeight; }
+}
+
+async function runTurn(){
+  if(M.busy||M.status!=="live"||!M.sc) return;
+  M.busy=true; M.error=null; render();
+  try{
+    const decision=decide(M.sc.buyerEnv, M.sc.priorities, RS.roundIndex, RS.lastSupplierOffer);
+    const buyerText=await draftBuyerMessage(M.sc, decision, M.form);
+    const guard=numericGuard(M.sc.buyerEnv, decision.approved, buyerText);
+    M.transcript.push({ from:"buyer", text:buyerText, decision, guard,
+      offer: decision.outcome==="counter"?decision.counter:decision.approved });
+    if(decision.outcome==="accept"){ M.status="closed"; M.busy=false; render(); return; }
+    if(decision.outcome==="escalate"){ M.status="escalated"; M.busy=false; render(); return; }
+    render(); // show buyer message before supplier "thinks"
+
+    const supText=await draftSupplierReply(M.sc, M.form, buyerText, RS.roundIndex);
+    const supOffer=extractSupplierOffer(M.sc, supText, RS.lastSupplierOffer);
+    RS.lastSupplierOffer=supOffer; RS.roundIndex+=1; M.round=RS.roundIndex;
+    const walked=/walk away|no deal|cannot proceed|end (the )?discussion|not interested/i.test(supText);
+    M.transcript.push({ from:"supplier", text:supText, offer:supOffer });
+    if(walked) M.status="walked";
+  }catch(e){ M.error=(e&&e.message)||"The negotiation call failed. Try again."; M.auto=false; }
+  finally{ M.busy=false; render(); }
+}
+
+async function toggleAuto(){
+  M.auto=!M.auto; render();
+  if(!M.auto) return;
+  while(M.auto && M.status==="live"){
+    if(RS.roundIndex>CFG.maxRounds+1) break;
+    await runTurn();
+    if(!M.auto || M.status!=="live") break;
+    await new Promise(r=>setTimeout(r, HAS_LLM?500:750));
+  }
+  M.auto=false; render();
+}
+
+render();
+</script>

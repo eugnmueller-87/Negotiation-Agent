@@ -14,6 +14,18 @@ never invent a concession.
 This is **v0**: the pure-Python core — envelope schema, deal engine, a headless
 agent-vs-agent simulator, and the eval suite. No UI, no network, no LLM calls.
 
+## Demos — open in a browser, no build
+
+Two single-file demos in [`demo/`](demo/), every number real engine output:
+
+- **[`demo/fleet.html`](demo/fleet.html)** — an agent negotiating a whole **tail-spend
+  category (1,000 suppliers at once)**: the spend teams can't reach, closing in waves,
+  with a god's-eye buyer-vs-supplier drill-down. *The scale story.*
+- **[`demo/peitho.html`](demo/peitho.html)** — a **self-play negotiation** in two mirrored
+  panes (buyer view · supplier view), a reasoning drawer showing the real
+  accept/counter/escalate math + numeric-guard verdict, and a **meeting-minutes**
+  generator at close. *The mechanism story.*
+
 ```text
 $ neg-sim
 ================================================================
