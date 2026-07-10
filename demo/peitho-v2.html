@@ -116,6 +116,52 @@
   .segbtn{border:none;background:none;border-radius:6px;padding:7px 14px;font-size:12.5px;color:var(--ink-2);}
   .segbtn.on{background:var(--buyer);color:#fff;font-weight:600;}
 
+  /* contract intelligence panel */
+  .intel{margin-top:20px;border:1px solid var(--line);border-radius:14px;background:var(--surface);
+    padding:16px 18px;box-shadow:0 1px 0 rgba(0,0,0,.02);}
+  .intel-hd{display:flex;gap:11px;align-items:flex-start;margin-bottom:12px;}
+  .intel-hd b{font-size:15px;display:block;} .intel-hd span{font-size:12.5px;color:var(--ink-3);line-height:1.5;display:block;margin-top:2px;}
+  .intel-ta{width:100%;min-height:90px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);
+    color:var(--ink);font-family:var(--mono);font-size:12.5px;padding:10px 12px;resize:vertical;line-height:1.5;}
+  .intel-row{display:flex;align-items:center;gap:11px;margin-top:11px;flex-wrap:wrap;}
+  .intel-research{font-size:12px;color:var(--ink-2);display:inline-flex;align-items:center;gap:6px;cursor:pointer;}
+  .intel-err{color:var(--crit);font-size:12.5px;}
+  .spin{width:12px;height:12px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;display:inline-block;animation:sp .6s linear infinite;}
+  @keyframes sp{to{transform:rotate(360deg);}}
+
+  .intel-out{margin-top:16px;border-top:1px solid var(--line);padding-top:14px;}
+  .intel-sec-lbl{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin:14px 0 9px;}
+  .intel-sec-lbl:first-child{margin-top:0;}
+  .sec-sub{text-transform:none;letter-spacing:0;color:var(--ink-3);font-weight:400;}
+  .intel-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:9px 16px;}
+  .ip{display:flex;flex-direction:column;gap:2px;font-size:12.5px;border-bottom:1px solid var(--line);padding-bottom:6px;}
+  .ipk{font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);}
+  .ipv b{font-weight:600;} .ipv .unk{color:var(--ink-3);}
+  .asr{font-family:var(--mono);font-size:9px;padding:1px 5px;border-radius:4px;text-transform:uppercase;letter-spacing:.05em;}
+  .asr-confirmed{background:color-mix(in srgb,var(--good) 15%,transparent);color:var(--good);}
+  .asr-probable{background:color-mix(in srgb,var(--warn) 15%,transparent);color:var(--warn);}
+  .asr-unknown{background:var(--surface-2);color:var(--ink-3);}
+  .intel-risk{margin-top:12px;font-size:12.5px;color:var(--ink-2);display:flex;gap:10px;flex-wrap:wrap;padding:9px 12px;background:var(--surface-2);border-radius:9px;}
+  .risk-lbl{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);}
+  .intel-block{margin-top:12px;padding:12px 14px;border:1.5px solid var(--crit);border-radius:10px;
+    background:color-mix(in srgb,var(--crit) 8%,transparent);color:var(--crit);font-size:13px;font-weight:600;}
+
+  .adjs{display:flex;flex-direction:column;gap:8px;}
+  .adj{display:flex;gap:11px;padding:11px 13px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);border-left:3px solid var(--line);}
+  .adj-give{border-left-color:var(--good);} .adj-hold{border-left-color:var(--buyer);} .adj-hedge{border-left-color:var(--warn);}
+  .adj-check{padding-top:2px;} .adj-check input{width:16px;height:16px;accent-color:var(--buyer);cursor:pointer;}
+  .adj-body{flex:1;}
+  .adj-top{display:flex;align-items:center;gap:9px;margin-bottom:4px;}
+  .adj-rule{font-family:var(--mono);font-size:11px;color:var(--ink-2);font-weight:600;}
+  .adj-role{font-family:var(--mono);font-size:9.5px;padding:1px 7px;border-radius:5px;text-transform:uppercase;letter-spacing:.05em;}
+  .adj-role-give{background:color-mix(in srgb,var(--good) 15%,transparent);color:var(--good);}
+  .adj-role-hold{background:color-mix(in srgb,var(--buyer) 15%,transparent);color:var(--buyer);}
+  .adj-role-hedge{background:color-mix(in srgb,var(--warn) 15%,transparent);color:var(--warn);}
+  .adj-rat{font-size:12.5px;color:var(--ink-2);line-height:1.5;}
+  .intel-apply{margin-top:13px;display:flex;align-items:center;gap:13px;flex-wrap:wrap;}
+  .intel-apply .meta{font-size:12px;color:var(--ink-3);}
+  .intel-none{margin-top:12px;font-size:12.5px;color:var(--ink-3);padding:10px 13px;background:var(--surface-2);border-radius:9px;}
+
   /* ── MANDATE CARD ──────────────────────────────────────── */
   .mandate{border:1px solid var(--line);border-radius:14px;background:var(--surface);
     box-shadow:0 1px 0 rgba(0,0,0,.02);overflow:hidden;margin-bottom:22px;}
@@ -330,6 +376,8 @@ const M = {
   },
   session:null, signed:null, transcript:[], thread:[], turns:[],
   tab:"buyer", busy:false, status:"live", terminal:false, error:null, convergence:[],
+  // contract intelligence
+  intel:{ open:false, busy:false, text:"", result:null, accepted:{}, error:null, applied:false },
 };
 
 // Every negotiable term the demo can put on the table. `weightKey` maps to M.form.
@@ -371,7 +419,7 @@ function buildMandate(){
   return {
     envelope:{
       negotiation_id:"neg-"+M.session, version:1, signed_by:"e.mueller (demo)",
-      target_utility:0.90, reservation_utility:0.60, terms:envTerms,
+      target_utility:(M.shapedTarget??0.90), reservation_utility:(M.shapedReservation??0.60), terms:envTerms,
     },
     supplier_appetite:appetite,
     config:{max_rounds:6, beta:2.5, stall_rounds:3, on_unknown_terms:"escalate"},
@@ -449,6 +497,8 @@ function setupView(){
       You watch it happen, including the moment the guard rejects a draft.</p>
     <div class="modenote" id="modenote"><span class="dot"></span><span id="modenoteText">checking backend…</span></div>
 
+    ${sectionIntel()}
+
     <div class="grid">
       ${field("Supplier","legal counterparty",`<input class="in" id="f-supplier" value="${esc(f.supplier)}">`)}
       ${field("Category","",`<input class="in" id="f-category" value="${esc(f.category)}">`)}
@@ -466,6 +516,86 @@ function setupView(){
       <button class="btn primary big" id="startBtn"><svg width="16" height="16"><use href="#i-seal"/></svg> Sign the mandate &amp; open</button>
       <span class="meta">target €${(+f.target).toFixed(2)} · floor €${(+f.floor).toFixed(2)} · ${activeTerms().length} terms on the table</span>
     </div>
+  </div>`;
+}
+
+function sectionIntel(){
+  const it=M.intel;
+  const sample = `SUPPLY AGREEMENT
+
+Supplier: Nordwerk Verpackung GmbH
+Category: Corrugated packaging
+
+1. Price. The unit price shall be €11.50 per unit.
+2. Payment. Invoices are payable net-30 days.
+3. Term. This agreement expires 2026-08-15 unless renewed.
+4. Volume. Minimum annual volume: 40,000 units.
+5. Confidentiality. Both parties enter a mutual non-disclosure agreement.`;
+  return `<div class="intel">
+    <div class="intel-hd">
+      <svg width="17" height="17" style="color:var(--buyer)"><use href="#i-seal"/></svg>
+      <div><b>Walk in prepared</b>
+        <span>Paste the current/expiring contract — the agent extracts the deal, researches the supplier, and proposes how the intelligence should shape your mandate. You approve every change.</span></div>
+    </div>
+    <textarea class="intel-ta" id="intelText" placeholder="Paste contract text…">${esc(it.text)}</textarea>
+    <div class="intel-row">
+      <button class="btn primary" id="intelReadBtn" ${it.busy?"disabled":""}>${it.busy?'<span class="spin"></span> Reading…':'📄 Read the contract'}</button>
+      <button class="btn ghost" id="intelSampleBtn">load a sample</button>
+      <label class="intel-research"><input type="checkbox" id="intelResearch" checked> research supplier (Hades)</label>
+      ${it.error?`<span class="intel-err">⚠ ${esc(it.error)}</span>`:""}
+    </div>
+    ${it.result?intelResult(it.result):""}
+    <input type="hidden" id="intelSample" value="${esc(sample).replace(/"/g,'&quot;')}">
+  </div>`;
+}
+
+function intelResult(r){
+  const i=r.intelligence, ext=i.extraction;
+  const life=i.lifecycle||{};
+  const legal=i.legal||{};
+  const grounded=(g,fmt)=> g&&g.value!=null ? `<b>${esc(fmt?fmt(g.value):g.value)}</b> <span class="asr asr-${g.assurance}">${g.assurance}</span>` : `<span class="unk">not detected</span>`;
+  const terms=Object.fromEntries((ext.terms||[]).map(t=>[t.name,t.value]));
+  const pic = [
+    ["Supplier", ext.supplier_name?`<b>${esc(ext.supplier_name)}</b>`:`<span class="unk">—</span>`],
+    ["Unit price", terms.price!=null?`<b>€${(+terms.price).toFixed(2)}</b>`:`<span class="unk">—</span>`],
+    ["Payment", terms.payment_days!=null?`<b>net-${terms.payment_days}</b>`:`<span class="unk">—</span>`],
+    ["Volume", terms.volume_units!=null?`<b>${(+terms.volume_units).toLocaleString('en')} units</b>`:`<span class="unk">—</span>`],
+    ["Expiry", grounded(life.expiration_date)],
+    ["NDA", grounded(legal.has_nda, v=>v==="true"?"in place ✓":"none")],
+    ["DPA", grounded(legal.has_dpa, v=>v==="true"?"in place ✓":"none")],
+    ["Units", i.units_of_measure&&i.units_of_measure.length?`<b>${i.units_of_measure.map(esc).join(", ")}</b>`:`<span class="unk">—</span>`],
+  ];
+  const brief=r.brief;
+  const riskRow = brief ? `<div class="intel-risk">
+    <span class="risk-lbl">Supplier risk (${brief.source==="sample"?"sample — not live":"Hades"})</span>
+    <span>${esc(brief.risk_level||"—")} · ${esc(brief.recommendation||"—")} · sanctions ${brief.sanctioned?"⚠ match":"clear ✓"} · LkSG ${esc((brief.lksg_signal||"—").replace(/_/g," "))}</span>
+  </div>` : (r.research_note?`<div class="intel-risk"><span class="risk-lbl">Supplier risk</span><span>${esc(r.research_note)}</span></div>`:"");
+
+  const blocked = r.blocked ? `<div class="intel-block">⛔ ${esc(r.block_reason||"Supplier blocked — a human must clear this.")}</div>` : "";
+
+  const adj = (r.adjustments||[]).map(a=>{
+    const acc = M.intel.accepted[a.rule_id] !== false; // default accepted
+    return `<div class="adj adj-${a.role}">
+      <label class="adj-check"><input type="checkbox" data-rule="${esc(a.rule_id)}" ${acc?"checked":""} ${r.blocked?"disabled":""}></label>
+      <div class="adj-body">
+        <div class="adj-top"><span class="adj-rule">${esc(a.rule_id)}</span>
+          <span class="adj-role adj-role-${a.role}">${a.role}</span></div>
+        <div class="adj-rat">${esc(a.rationale)}</div>
+      </div>
+    </div>`;
+  }).join("");
+
+  return `<div class="intel-out">
+    <div class="intel-sec-lbl">the commercial picture</div>
+    <div class="intel-grid">${pic.map(([k,v])=>`<div class="ip"><span class="ipk">${k}</span><span class="ipv">${v}</span></div>`).join("")}</div>
+    ${riskRow}
+    ${blocked}
+    ${(r.adjustments&&r.adjustments.length)?`<div class="intel-sec-lbl">proposed mandate adjustments <span class="sec-sub">the model found it · a rule moved it · you approve it</span></div>
+      <div class="adjs">${adj}</div>
+      <div class="intel-apply">
+        <button class="btn primary" id="intelApplyBtn" ${r.blocked?"disabled":""}>Apply to mandate ↓</button>
+        <span class="meta">${r.blocked?"cleared by a human before this unlocks":"writes the shaped target/floor/terms into the form below"}</span>
+      </div>` : `<div class="intel-none">No mandate adjustments proposed — the contract looks clean. The extracted numbers are pre-filled below.</div>`}
   </div>`;
 }
 
@@ -538,8 +668,71 @@ function bindSetup(){
   // optional-term toggles + concession pace (re-render to reflect structure change)
   app.querySelectorAll(".termchip.toggle").forEach(b=>b.onclick=()=>{ M.form[b.dataset.toggle]=!M.form[b.dataset.toggle]; render(); });
   app.querySelectorAll(".segbtn").forEach(b=>b.onclick=()=>{ M.form.concession=b.dataset.pace; render(); });
+  bindIntel();
   $("#startBtn").onclick=start;
   refreshHealth();
+}
+
+function bindIntel(){
+  const ta=$("#intelText"); if(ta) ta.oninput=()=>{ M.intel.text=ta.value; };
+  const sb=$("#intelSampleBtn"); if(sb) sb.onclick=()=>{ M.intel.text=$("#intelSample").value; render(); };
+  const rb=$("#intelReadBtn"); if(rb) rb.onclick=readContract;
+  // adjustment toggles → re-preview is deferred until "Apply"; just track acceptance
+  app.querySelectorAll(".adj-check input").forEach(c=>c.onchange=()=>{ M.intel.accepted[c.dataset.rule]=c.checked; });
+  const ab=$("#intelApplyBtn"); if(ab) ab.onclick=applyIntel;
+}
+
+async function readContract(){
+  const text=(M.intel.text||"").trim();
+  if(!text){ M.intel.error="paste a contract first"; render(); return; }
+  M.intel.busy=true; M.intel.error=null; M.intel.result=null; M.intel.accepted={}; render();
+  try{
+    const research=$("#intelResearch") ? $("#intelResearch").checked : true;
+    const res=await post("/intel", {contract_text:text, research});
+    M.intel.result=res;
+  }catch(e){ M.intel.error=e.message||"couldn't read the contract"; }
+  finally{ M.intel.busy=false; render(); }
+}
+
+async function applyIntel(){
+  const r=M.intel.result; if(!r || r.blocked) return;
+  // build the current base envelope from the form, then reshape server-side
+  const base=buildMandate().envelope;
+  const accepted=(r.adjustments||[]).filter(a=>M.intel.accepted[a.rule_id]!==false).map(a=>a.rule_id);
+  try{
+    const res=await post("/reshape", {
+      base_envelope:base, adjustments:r.adjustments,
+      accepted_rule_ids:accepted, supplier_appetite:buildMandate().supplier_appetite,
+    });
+    writeShapedIntoForm(res.shaped_envelope, r);
+    M.intel.applied=true;
+    render();
+    const el=document.querySelector(".grid"); if(el) el.scrollIntoView({behavior:"smooth"});
+  }catch(e){
+    M.intel.error = e.code==="mandate_conflict"
+      ? "Those adjustments conflict — deselect one: "+(e.message||"")
+      : (e.message||"couldn't apply");
+    render();
+  }
+}
+
+// map the server's shaped envelope back into the editable form (levers + emphasis + floors)
+function writeShapedIntoForm(env, r){
+  const i=r.intelligence, ext=i.extraction;
+  const terms=Object.fromEntries((ext.terms||[]).map(t=>[t.name,t.value]));
+  // pre-fill the negotiable numbers from the extracted contract
+  if(terms.price!=null){ M.form.target=+terms.price; M.form.floor=Math.round((+terms.price*1.17)*100)/100; }
+  if(terms.payment_days!=null) M.form.paymentLever=Math.max(M.form.paymentLever, +terms.payment_days);
+  // enable optional terms the shaper added, set weights from the shaped envelope
+  const byName=Object.fromEntries(env.terms.map(t=>[t.name,t]));
+  if(byName.rebate_pct) M.form.rebateOn=true;
+  if(byName.volume_units) M.form.volumeOn=true;
+  const total=env.terms.reduce((s,t)=>s+t.weight,0);
+  const setW=(name,key)=>{ if(byName[name]) M.form[key]=Math.round(byName[name].weight/total*100); };
+  setW("price","wPrice"); setW("payment_days","wPayment"); setW("contract_months","wContract");
+  setW("rebate_pct","wRebate"); setW("volume_units","wVolume");
+  // the data-driven target/floor from the shaped mandate (replaces the hardcoded 0.9/0.6)
+  M.shapedTarget=env.target_utility; M.shapedReservation=env.reservation_utility;
 }
 
 /* ── run view ── */
