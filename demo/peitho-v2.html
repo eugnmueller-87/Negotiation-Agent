@@ -92,6 +92,30 @@
   .startrow{margin-top:26px;display:flex;align-items:center;gap:15px;flex-wrap:wrap;}
   .startrow .meta{font-size:12.5px;color:var(--ink-3);}
 
+  /* setup panels (emphasis / terms / supplier) */
+  .panel{margin-top:20px;border:1px solid var(--line);border-radius:12px;background:var(--surface);padding:15px 18px;}
+  .panel-hd{display:flex;align-items:center;gap:9px;font-size:13px;font-weight:650;color:var(--ink);}
+  .panel-hd svg{color:var(--buyer);}
+  .panel-sub{font-weight:400;font-size:11.5px;color:var(--ink-3);flex-basis:100%;margin-top:3px;margin-left:24px;line-height:1.45;}
+  .sliders{margin-top:12px;display:flex;flex-direction:column;gap:11px;}
+  .slider{display:grid;grid-template-columns:130px 1fr 46px;gap:12px;align-items:center;}
+  .slider label{font-size:12.5px;color:var(--ink-2);font-weight:600;}
+  .slider .wval{text-align:right;font-size:12.5px;color:var(--buyer);font-weight:600;}
+  .range{-webkit-appearance:none;appearance:none;height:5px;border-radius:3px;background:var(--surface-2);outline:none;}
+  .range::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:var(--buyer);
+    cursor:pointer;border:2px solid var(--surface);box-shadow:0 1px 3px rgba(0,0,0,.2);}
+  .range::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:var(--buyer);cursor:pointer;border:2px solid var(--surface);}
+  .termchips{margin-top:12px;display:flex;flex-wrap:wrap;gap:9px;}
+  .termchip{font-size:12.5px;padding:7px 12px;border-radius:9px;border:1px solid var(--line);
+    display:inline-flex;align-items:center;gap:7px;background:var(--surface-2);color:var(--ink-2);}
+  .termchip.fixed{background:color-mix(in srgb,var(--buyer) 10%,transparent);border-color:color-mix(in srgb,var(--buyer) 30%,transparent);color:var(--buyer);font-weight:600;}
+  .termchip.toggle{cursor:pointer;} .termchip.toggle svg{color:var(--ink-3);}
+  .termchip.toggle.on{background:color-mix(in srgb,var(--good) 12%,transparent);border-color:color-mix(in srgb,var(--good) 34%,transparent);color:var(--good);font-weight:600;}
+  .termchip.toggle.on svg{color:var(--good);}
+  .seg{display:inline-flex;background:var(--surface-2);border:1px solid var(--line);border-radius:9px;padding:3px;gap:3px;}
+  .segbtn{border:none;background:none;border-radius:6px;padding:7px 14px;font-size:12.5px;color:var(--ink-2);}
+  .segbtn.on{background:var(--buyer);color:#fff;font-weight:600;}
+
   /* ── MANDATE CARD ──────────────────────────────────────── */
   .mandate{border:1px solid var(--line);border-radius:14px;background:var(--surface);
     box-shadow:0 1px 0 rgba(0,0,0,.02);overflow:hidden;margin-bottom:22px;}
@@ -280,22 +304,48 @@ const PERSONAS = [
   {id:"evasive",    label:"Evasive",     hint:"stalls, defers, avoids numbers"},
 ];
 
-const TERM_LABELS = {price:"Unit price", payment_days:"Payment terms", contract_months:"Contract length"};
+const TERM_LABELS = {price:"Unit price", payment_days:"Payment terms", contract_months:"Contract length",
+  rebate_pct:"Rebate %", volume_units:"Annual volume"};
 function fmtTerm(name, x){
   if(x==null) return "—";
   if(name==="price") return "€"+Number(x).toFixed(2);
   if(name==="payment_days") return "net-"+Math.round(x);
   if(name==="contract_months") return Math.round(x)+" mo";
+  if(name==="rebate_pct") return Number(x).toFixed(1)+"%";
+  if(name==="volume_units") return Math.round(x).toLocaleString('en')+" units";
   return String(x);
 }
 
 const M = {
   phase:"setup",
-  form:{ supplier:"Nordwerk Verpackung GmbH", category:"Corrugated packaging — annual supply",
-    target:92, floor:108, paymentLever:60, contractMax:24, persona:"aggressive" },
+  form:{
+    supplier:"Nordwerk Verpackung GmbH", category:"Corrugated packaging — annual supply",
+    target:92, floor:108, paymentLever:60, contractMax:24, persona:"aggressive",
+    // editable weights (emphasis) — 0..100 each; normalised across ENABLED terms only
+    wPrice:50, wPayment:25, wContract:25, wRebate:20, wVolume:20,
+    // optional terms off by default
+    rebateOn:false, volumeOn:false,
+    // supplier controls
+    supplierOpen:109, concession:"medium",  // slow | medium | fast
+  },
   session:null, signed:null, transcript:[], thread:[], turns:[],
   tab:"buyer", busy:false, status:"live", terminal:false, error:null, convergence:[],
 };
+
+// Every negotiable term the demo can put on the table. `weightKey` maps to M.form.
+const TERM_DEFS = [
+  {name:"price", type:"price", dir:"minimize", label:"Unit price", weightKey:"wPrice", always:true,
+    best:f=>+f.target, worst:f=>+f.floor, appetite:0.15},
+  {name:"payment_days", type:"payment_days", dir:"maximize", label:"Payment terms", weightKey:"wPayment", always:true,
+    best:f=>+f.paymentLever, worst:()=>30, appetite:0.85},
+  {name:"contract_months", type:"contract_months", dir:"minimize", label:"Contract length", weightKey:"wContract", always:true,
+    best:()=>12, worst:f=>+f.contractMax, appetite:0.70},
+  {name:"rebate_pct", type:"rebate_pct", dir:"maximize", label:"Rebate %", weightKey:"wRebate", toggle:"rebateOn",
+    best:()=>8, worst:()=>0, appetite:0.55},
+  {name:"volume_units", type:"volume_units", dir:"minimize", label:"Annual volume", weightKey:"wVolume", toggle:"volumeOn",
+    best:()=>10000, worst:()=>50000, appetite:0.60},
+];
+function activeTerms(){ return TERM_DEFS.filter(t => t.always || M.form[t.toggle]); }
 
 /* ── backend calls ── */
 async function post(path, body){
@@ -310,38 +360,65 @@ async function post(path, body){
 
 function buildMandate(){
   const f = M.form;
+  const terms = activeTerms();
+  const rawSum = terms.reduce((s,t)=>s + Math.max(0.01, +f[t.weightKey]), 0);
+  const envTerms = terms.map(t=>({
+    name:t.name, term_type:t.type, direction:t.dir,
+    best:t.best(f), worst:t.worst(f),
+    weight: Math.max(0.01, +f[t.weightKey]) / rawSum,   // normalised across active terms
+  }));
+  const appetite = {}; terms.forEach(t=>appetite[t.name]=t.appetite);
   return {
     envelope:{
       negotiation_id:"neg-"+M.session, version:1, signed_by:"e.mueller (demo)",
-      target_utility:0.90, reservation_utility:0.60,
-      terms:[
-        {name:"price", term_type:"price", direction:"minimize", best:+f.target, worst:+f.floor, weight:0.50},
-        {name:"payment_days", term_type:"payment_days", direction:"maximize", best:+f.paymentLever, worst:30, weight:0.25},
-        {name:"contract_months", term_type:"contract_months", direction:"minimize", best:12, worst:+f.contractMax, weight:0.25},
-      ],
+      target_utility:0.90, reservation_utility:0.60, terms:envTerms,
     },
-    supplier_appetite:{price:0.15, payment_days:0.85, contract_months:0.70},
+    supplier_appetite:appetite,
     config:{max_rounds:6, beta:2.5, stall_rounds:3, on_unknown_terms:"escalate"},
   };
 }
+function normalizedWeights(){
+  const f=M.form, terms=activeTerms();
+  const raw = terms.reduce((s,t)=>s+Math.max(0.01,+f[t.weightKey]),0);
+  return Object.fromEntries(terms.map(t=>[t.name, Math.max(0.01,+f[t.weightKey])/raw]));
+}
 
 /* scripted supplier that concedes by persona — the browser plays the counterparty
-   so the demo is self-contained; the ENGINE (buyer) is the real thing on the server. */
-function supplierMessage(persona, round){
+   so the demo is self-contained; the ENGINE (buyer) is the real thing on the server.
+   Returns {text, terms} so step() uses the exact offer, not a brittle re-parse. */
+function supplierMove(persona, round){
   const f = M.form;
-  const open = +f.floor + 1.0;
-  const floor = +f.target; // supplier won't go below the buyer's target
-  const speed = {cooperative:0.42, aggressive:0.20, evasive:0.28}[persona];
-  const px = Math.max(floor, open - (open-floor)*speed*(round+1));
-  const price = Math.round(px*100)/100;
-  const pay = persona==="cooperative" ? Math.min(45+round*4, +f.paymentLever) : 30;
+  // concession pace blends the persona with the user's chosen pace
+  const paceMul = {slow:0.6, medium:1.0, fast:1.5}[f.concession] ?? 1.0;
+  const speed = ({cooperative:0.42, aggressive:0.20, evasive:0.28}[persona]) * paceMul;
+  const frac = Math.min(1, speed*(round+1));
+
+  // price: opens at supplierOpen, concedes toward the buyer's target (won't go below)
+  const pOpen = +f.supplierOpen, pFloor = +f.target;
+  const price = Math.round(Math.max(pFloor, pOpen - (pOpen-pFloor)*frac)*100)/100;
+  // payment: cooperative extends toward the lever; others hold near net-30
+  const pay = persona==="cooperative" ? Math.min(45+round*4, +f.paymentLever) : (persona==="evasive"?30:30);
+  // contract: cooperative shortens toward 12; others hold the max
   const con = persona==="cooperative" ? Math.max(12, +f.contractMax-round*3) : +f.contractMax;
-  const flavor = {
-    cooperative:`Appreciate the dialogue. To keep this moving I can come to €${price.toFixed(2)} per unit, and I'm open to net-${pay} if we lock in ${con} months. Let's find the middle.`,
-    aggressive:`I hear you, but €${price.toFixed(2)} is about as far as I can stretch on unit price, and I'd need net-${pay} to make the numbers work. Margins are thin here.`,
-    evasive:`Let me take the exact figure back to my team — provisionally I could look at around €${price.toFixed(2)}, though I'd have to confirm net-${pay} and the ${con}-month term internally.`,
+
+  const terms = {price, payment_days:pay, contract_months:con};
+  // optional terms, if enabled — supplier gives ground slowly
+  if(f.rebateOn) terms.rebate_pct = Math.round(Math.min(8, frac*4)*10)/10;
+  if(f.volumeOn) terms.volume_units = Math.round(Math.max(10000, 50000 - frac*40000));
+
+  // build a message that states every ACTIVE term in extractor-safe phrasing
+  // (space before "months"; "net-N"; "N%"; "N units") so the server parses a full offer.
+  const parts = [`€${price.toFixed(2)} per unit`, `net-${pay}`, `${con} months`];
+  if(f.rebateOn) parts.push(`${terms.rebate_pct}% rebate`);
+  if(f.volumeOn) parts.push(`${terms.volume_units.toLocaleString('en')} units`);
+  const list = parts.slice(0,-1).join(", ")+", and "+parts.slice(-1);
+  const lead = {
+    cooperative:"Appreciate the dialogue — to keep this moving I can come to",
+    aggressive:"I hear you, but this is about as far as I can stretch:",
+    evasive:"Let me take this back to my team — provisionally I could look at",
   }[persona];
-  return flavor;
+  const tail = {cooperative:" Let's find the middle here.", aggressive:" Margins are thin.", evasive:", though I'd want to confirm internally."}[persona];
+  return { text:`${lead} ${list}.${tail}`, terms };
 }
 
 /* ══ RENDER ══════════════════════════════════════════════════════════════ */
@@ -379,13 +456,64 @@ function setupView(){
       ${field("Walk-away floor (€/unit)","never cross this",`<input class="in" type="number" step="0.5" id="f-floor" value="${f.floor}">`)}
       ${field("Payment lever (max net-days)","a term to trade",`<input class="in" type="number" id="f-paymentLever" value="${f.paymentLever}">`)}
       ${field("Max contract length (months)","",`<input class="in" type="number" id="f-contractMax" value="${f.contractMax}">`)}
-      <div class="fld wide"><label>Supplier persona <i>· scripted counterparty; the buyer engine is live</i></label>
-        <div class="personas">${PERSONAS.map(p=>`<button type="button" class="persona${f.persona===p.id?" on":""}" data-p="${p.id}"><b>${p.label}</b><span>${p.hint}</span></button>`).join("")}</div>
-      </div>
     </div>
+
+    ${sectionEmphasis()}
+    ${sectionTerms()}
+    ${sectionSupplier()}
+
     <div class="startrow">
       <button class="btn primary big" id="startBtn"><svg width="16" height="16"><use href="#i-seal"/></svg> Sign the mandate &amp; open</button>
-      <span class="meta">target €${(+f.target).toFixed(2)} · floor €${(+f.floor).toFixed(2)} · levers: payment, term</span>
+      <span class="meta">target €${(+f.target).toFixed(2)} · floor €${(+f.floor).toFixed(2)} · ${activeTerms().length} terms on the table</span>
+    </div>
+  </div>`;
+}
+
+function sectionEmphasis(){
+  const f=M.form, terms=activeTerms();
+  const nw = normalizedWeights();
+  return `<div class="panel">
+    <div class="panel-hd"><svg width="15" height="15"><use href="#i-scale"/></svg> Emphasis
+      <span class="panel-sub">how much the buyer weights each term — this is what drives logrolling. Normalised automatically.</span></div>
+    <div class="sliders">
+      ${terms.map(t=>`<div class="slider">
+        <label>${esc(t.label)}</label>
+        <input type="range" min="1" max="100" value="${f[t.weightKey]}" data-w="${t.weightKey}" class="range">
+        <span class="mono wval">${Math.round(nw[t.name]*100)}%</span>
+      </div>`).join("")}
+    </div>
+  </div>`;
+}
+
+function sectionTerms(){
+  const f=M.form;
+  const opt = TERM_DEFS.filter(t=>t.toggle);
+  return `<div class="panel">
+    <div class="panel-hd"><svg width="15" height="15"><use href="#i-split"/></svg> Terms on the table
+      <span class="panel-sub">price, payment, and contract length are always in play — add more to widen the logrolling space.</span></div>
+    <div class="termchips">
+      <span class="termchip fixed">Unit price</span>
+      <span class="termchip fixed">Payment terms</span>
+      <span class="termchip fixed">Contract length</span>
+      ${opt.map(t=>`<button type="button" class="termchip toggle${f[t.toggle]?" on":""}" data-toggle="${t.toggle}">
+        <svg width="12" height="12"><use href="#i-${f[t.toggle]?"check":"x"}"/></svg> ${esc(t.label)}</button>`).join("")}
+    </div>
+  </div>`;
+}
+
+function sectionSupplier(){
+  const f=M.form;
+  const paces=[{id:"slow",l:"Slow"},{id:"medium",l:"Medium"},{id:"fast",l:"Fast"}];
+  return `<div class="panel">
+    <div class="panel-hd"><svg width="15" height="15"><use href="#i-inbox"/></svg> The counterparty
+      <span class="panel-sub">the supplier is scripted (the buyer engine is the live part) — steer where it opens and how fast it moves.</span></div>
+    <div class="grid" style="margin-top:12px">
+      ${field("Supplier opening price (€/unit)","where it starts",`<input class="in" type="number" step="0.5" id="f-supplierOpen" value="${f.supplierOpen}">`)}
+      <div class="fld"><label>Concession pace <i>· how fast it gives ground</i></label>
+        <div class="seg">${paces.map(p=>`<button type="button" class="segbtn${f.concession===p.id?" on":""}" data-pace="${p.id}">${p.l}</button>`).join("")}</div></div>
+      <div class="fld wide"><label>Supplier persona</label>
+        <div class="personas">${PERSONAS.map(p=>`<button type="button" class="persona${f.persona===p.id?" on":""}" data-p="${p.id}"><b>${p.label}</b><span>${p.hint}</span></button>`).join("")}</div>
+      </div>
     </div>
   </div>`;
 }
@@ -393,10 +521,23 @@ function field(label,note,input){
   return `<div class="fld"><label>${label}${note?` <i>· ${note}</i>`:""}</label>${input}</div>`;
 }
 function bindSetup(){
-  ["supplier","category","target","floor","paymentLever","contractMax"].forEach(k=>{
+  ["supplier","category","target","floor","paymentLever","contractMax","supplierOpen"].forEach(k=>{
     const el=$("#f-"+k); if(el) el.oninput=()=>{ M.form[k]= el.type==="number"?+el.value:el.value; };
   });
   app.querySelectorAll(".persona").forEach(b=>b.onclick=()=>{ M.form.persona=b.dataset.p; render(); });
+  // emphasis sliders — live-update the % readout without a full re-render (keeps focus)
+  app.querySelectorAll(".range").forEach(r=>r.oninput=()=>{
+    M.form[r.dataset.w]=+r.value;
+    const nw=normalizedWeights();
+    app.querySelectorAll(".slider").forEach(s=>{
+      const key=s.querySelector(".range").dataset.w;
+      const def=TERM_DEFS.find(t=>t.weightKey===key);
+      if(def && nw[def.name]!=null) s.querySelector(".wval").textContent=Math.round(nw[def.name]*100)+"%";
+    });
+  });
+  // optional-term toggles + concession pace (re-render to reflect structure change)
+  app.querySelectorAll(".termchip.toggle").forEach(b=>b.onclick=()=>{ M.form[b.dataset.toggle]=!M.form[b.dataset.toggle]; render(); });
+  app.querySelectorAll(".segbtn").forEach(b=>b.onclick=()=>{ M.form.concession=b.dataset.pace; render(); });
   $("#startBtn").onclick=start;
   refreshHealth();
 }
@@ -422,7 +563,12 @@ function runView(){
 
 function mandateCard(){
   const f=M.form;
-  const emph = (n)=>`<div class="emphasis">${[...Array(6)].map((_,i)=>`<span class="edot${i<n?" on":""}"></span>`).join("")}</div>`;
+  const nw = normalizedWeights();
+  const emph = (frac)=>{ const n=Math.round(frac*6);
+    return `<div class="emphasis">${[...Array(6)].map((_,i)=>`<span class="edot${i<n?" on":""}"></span>`).join("")}</div>`; };
+  const emphRows = activeTerms().map(t=>
+    `<div class="mrow"><span class="k">Emphasis — ${esc(t.label.toLowerCase())}</span>${emph(nw[t.name])}
+       <span style="font-family:var(--mono);font-size:10px;color:var(--ink-3);margin-top:2px">${Math.round(nw[t.name]*100)}%</span></div>`).join("");
   return `<div class="mandate">
     <div class="seal"><svg width="20" height="20" style="color:var(--buyer)"><use href="#i-seal"/></svg>
       <div><div class="lbl">Negotiation mandate</div><h3>${esc(f.supplier)}</h3></div></div>
@@ -432,8 +578,7 @@ function mandateCard(){
       <div class="mrow"><span class="k">Target · Floor <i style="text-transform:none;letter-spacing:0;font-style:italic;color:var(--ink-3)">— buyer-private</i></span>
         <span class="v"><span class="mono">€${(+f.target).toFixed(2)}</span> · <span class="mono">€${(+f.floor).toFixed(2)}</span></span></div>
       <div class="mrow"><span class="k">Levers</span><span class="v">payment ≤ net-${f.paymentLever} · term ≤ ${f.contractMax}mo</span></div>
-      <div class="mrow"><span class="k">Emphasis — price</span>${emph(3)}</div>
-      <div class="mrow"><span class="k">Emphasis — payment / term</span>${emph(2)}</div>
+      ${emphRows}
       <div class="mfoot"><span class="sig">signed &amp; HMAC-verified server-side</span>
         <span>ref ${M.signed ? esc(M.signed.sig.slice(0,12)) : "—"}</span></div>
     </div>
@@ -669,19 +814,20 @@ function recordConvergence(){
 
 async function step(){
   if(M.busy || M.terminal) return;
-  M.busy=true; M.error=null; render();
+  M.busy=true; M.error=null;
+
+  const round = M.turns.length; // 1,2,3...
+  const move = supplierMove(M.form.persona, round-1);
+  const supText = move.text;
+  const offerTerms = move.terms; // exact terms the message states — no brittle re-parse
+
+  // Show the supplier's message immediately (with a thinking skeleton for the reply),
+  // but DON'T commit it to the fold-transcript until the server turn succeeds — so a
+  // failed step can be retried without duplicating the message.
+  M.thread.push({from:"supplier", text:supText, round});
+  render();
+
   try{
-    const round = M.turns.length; // 1,2,3...
-    const supText = supplierMessage(M.form.persona, round-1);
-    // supplier's offer terms are parsed server-side; we send raw_text + a hint of terms
-    const price = parseFloat((supText.match(/€\s?([\d.]+)/)||[])[1]) || (M.form.floor+1);
-    const pay = parseInt((supText.match(/net-(\d+)/)||[])[1]) || 30;
-    const con = parseInt((supText.match(/(\d+)[\s-]month/)||[])[1]) || M.form.contractMax;
-    const offerTerms = {price, payment_days:pay, contract_months:con};
-
-    M.thread.push({from:"supplier", text:supText, round});
-    render();
-
     const body = {
       signed_mandate: M.signed,
       transcript: {turns: M.transcript},
@@ -689,14 +835,15 @@ async function step(){
       session_id: M.session,
     };
     const res = await post("/negotiate/step", body);
-    // record the supplier offer into the transcript for the next fold
-    M.transcript.push({terms:offerTerms, raw_text:supText});
+    M.transcript.push({terms:offerTerms, raw_text:supText}); // now part of the fold
     pushTurn(res.turn, round);
     M.terminal = res.terminal;
     if(res.terminal) M.status = res.turn.outcome==="accept" ? "closed" : "escalated";
   }catch(e){
+    // roll the just-shown supplier message back out so a retry doesn't duplicate it
+    M.thread.pop();
     if(e.code==="negotiation_closed"){ M.terminal=true; M.status="closed"; }
-    else if(e.code==="offer_unparseable"){ M.error="the supplier message had no readable price — try again"; }
+    else if(e.code==="offer_unparseable"){ M.error="couldn't read the supplier's price/terms — step again"; }
     else M.error = e.message;
   }finally{ M.busy=false; render(); }
 }
