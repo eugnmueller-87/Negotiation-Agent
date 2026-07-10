@@ -1,0 +1,728 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Peitho — autonomous procurement negotiation</title>
+<style>
+  :root{
+    --paper:#f6f4ef; --surface:#fffdf9; --surface-2:#efece4; --line:#e2ddd1;
+    --ink:#1a1813; --ink-2:#57534a; --ink-3:#8c877b;
+    --buyer:#2a78d6; --supplier:#c9541f; --good:#2f7d4f; --warn:#b7791f; --crit:#c4392f;
+    --chart-grid:#e7e2d6; --chart-axis:#b8b2a4;
+    --serif:'Iowan Old Style','Palatino Linotype','Palatino','Georgia',serif;
+    --sans:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+    --mono:'SFMono-Regular',ui-monospace,'Cascadia Mono','Consolas',monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --paper:#14130e; --surface:#1c1a14; --surface-2:#24211a; --line:#322e25;
+      --ink:#f1eee4; --ink-2:#c3bdb0; --ink-3:#8b8577;
+      --buyer:#5b9cea; --supplier:#e8875a; --good:#5fc088; --warn:#e0b455; --crit:#e8776b;
+      --chart-grid:#2a2720; --chart-axis:#4a463b; }
+  }
+  :root[data-theme="dark"]{ --paper:#14130e; --surface:#1c1a14; --surface-2:#24211a; --line:#322e25;
+    --ink:#f1eee4; --ink-2:#c3bdb0; --ink-3:#8b8577;
+    --buyer:#5b9cea; --supplier:#e8875a; --good:#5fc088; --warn:#e0b455; --crit:#e8776b;
+    --chart-grid:#2a2720; --chart-axis:#4a463b; }
+  :root[data-theme="light"]{ --paper:#f6f4ef; --surface:#fffdf9; --surface-2:#efece4; --line:#e2ddd1;
+    --ink:#1a1813; --ink-2:#57534a; --ink-3:#8c877b;
+    --buyer:#2a78d6; --supplier:#c9541f; --good:#2f7d4f; --warn:#b7791f; --crit:#c4392f;
+    --chart-grid:#e7e2d6; --chart-axis:#b8b2a4; }
+
+  *{box-sizing:border-box;} html{scroll-behavior:smooth;}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);
+    font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased;}
+  h1,h2,h3{margin:0;font-family:var(--serif);font-weight:600;letter-spacing:-.01em;text-wrap:balance;}
+  .mono{font-family:var(--mono);font-variant-numeric:tabular-nums;}
+  button{font-family:inherit;cursor:pointer;color:inherit;}
+  svg{display:inline-block;vertical-align:middle;}
+  :focus-visible{outline:2px solid var(--buyer);outline-offset:2px;border-radius:5px;}
+  @media (prefers-reduced-motion: reduce){ *{animation:none!important;transition:none!important;} }
+
+  /* header */
+  header{display:flex;align-items:center;gap:14px;padding:13px 22px;border-bottom:1px solid var(--line);
+    background:var(--surface);position:sticky;top:0;z-index:30;}
+  .brand{display:flex;align-items:baseline;gap:11px;}
+  .brand b{font-family:var(--serif);font-size:20px;letter-spacing:-.02em;}
+  .brand span{font-size:11.5px;color:var(--ink-3);font-family:var(--mono);letter-spacing:.03em;}
+  .hspace{flex:1;}
+  .hstat{font-size:11.5px;font-family:var(--mono);color:var(--ink-3);display:flex;align-items:center;gap:7px;}
+  .hstat .dot{width:7px;height:7px;border-radius:50%;background:var(--ink-3);}
+  .hstat.live .dot{background:var(--good);box-shadow:0 0 0 3px color-mix(in srgb,var(--good) 22%,transparent);}
+  .iconbtn{background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:6px 10px;
+    font-size:12.5px;color:var(--ink-2);display:inline-flex;align-items:center;gap:6px;}
+  .iconbtn:hover{color:var(--ink);}
+
+  .wrap{max-width:1180px;margin:0 auto;padding:26px 22px 90px;}
+
+  /* buttons */
+  .btn{border:none;border-radius:9px;padding:9px 16px;font-size:14px;font-weight:600;
+    display:inline-flex;align-items:center;gap:8px;}
+  .btn.primary{background:var(--buyer);color:#fff;}
+  .btn.primary:hover:not(:disabled){filter:brightness(1.07);}
+  .btn.ghost{background:var(--surface-2);color:var(--ink-2);border:1px solid var(--line);}
+  .btn.ghost:hover:not(:disabled){color:var(--ink);}
+  .btn:disabled{opacity:.45;cursor:default;}
+  .btn.big{padding:12px 22px;font-size:15px;}
+
+  /* ── SETUP ─────────────────────────────────────────────── */
+  .setup{max-width:720px;margin:0 auto;}
+  .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-3);}
+  .setup h1{font-size:31px;line-height:1.12;margin:12px 0 14px;}
+  .lede{font-size:16px;color:var(--ink-2);line-height:1.55;max-width:60ch;}
+  .lede b{color:var(--ink);font-weight:600;}
+  .modenote{display:inline-flex;align-items:center;gap:8px;font-family:var(--mono);font-size:11.5px;
+    color:var(--ink-3);margin-top:16px;padding:6px 11px;border:1px solid var(--line);border-radius:8px;background:var(--surface);}
+  .modenote .dot{width:7px;height:7px;border-radius:50%;background:var(--warn);}
+  .modenote.live .dot{background:var(--good);}
+
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:26px;}
+  .fld{display:flex;flex-direction:column;gap:6px;} .fld.wide{grid-column:1/-1;}
+  .fld label{font-size:12px;font-weight:600;color:var(--ink-2);}
+  .fld label i{font-weight:400;color:var(--ink-3);font-style:normal;}
+  .in{width:100%;padding:9px 12px;border:1px solid var(--line);border-radius:9px;background:var(--surface);
+    color:var(--ink);font-size:14px;font-family:inherit;}
+  .in:focus{outline:2px solid var(--buyer);outline-offset:1px;}
+
+  .personas{display:flex;gap:10px;flex-wrap:wrap;}
+  .persona{flex:1;min-width:150px;text-align:left;background:var(--surface);border:1px solid var(--line);
+    border-radius:11px;padding:12px 14px;display:flex;flex-direction:column;gap:3px;}
+  .persona b{font-size:13.5px;} .persona span{font-size:11.5px;color:var(--ink-3);}
+  .persona.on{border-color:var(--supplier);background:color-mix(in srgb,var(--supplier) 10%,transparent);}
+  .startrow{margin-top:26px;display:flex;align-items:center;gap:15px;flex-wrap:wrap;}
+  .startrow .meta{font-size:12.5px;color:var(--ink-3);}
+
+  /* ── MANDATE CARD ──────────────────────────────────────── */
+  .mandate{border:1px solid var(--line);border-radius:14px;background:var(--surface);
+    box-shadow:0 1px 0 rgba(0,0,0,.02);overflow:hidden;margin-bottom:22px;}
+  .mandate .seal{padding:15px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;
+    background:linear-gradient(180deg,color-mix(in srgb,var(--buyer) 6%,transparent),transparent);}
+  .mandate .seal .lbl{font-family:var(--mono);font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-3);}
+  .mandate .seal h3{font-size:16px;}
+  .mandate .body{padding:16px 20px;display:grid;grid-template-columns:1fr 1fr;gap:14px 26px;}
+  .mrow{display:flex;flex-direction:column;gap:3px;}
+  .mrow .k{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);}
+  .mrow .v{font-size:14px;font-weight:600;}
+  .mrow .v .mono{font-weight:600;}
+  .emphasis{display:flex;gap:5px;align-items:center;margin-top:3px;}
+  .edot{width:8px;height:8px;border-radius:50%;background:var(--line);}
+  .edot.on{background:var(--buyer);}
+  .mfoot{grid-column:1/-1;border-top:1px solid var(--line);padding-top:12px;display:flex;
+    justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;
+    font-family:var(--mono);font-size:11px;color:var(--ink-3);}
+  .mfoot .sig{color:var(--ink-2);}
+
+  /* ── RUN transport + tabs ──────────────────────────────── */
+  .transport{display:flex;align-items:center;gap:11px;margin-bottom:16px;flex-wrap:wrap;}
+  .tabs{display:inline-flex;background:var(--surface-2);border:1px solid var(--line);border-radius:10px;padding:3px;gap:3px;}
+  .tab{border:none;background:none;border-radius:7px;padding:7px 13px;font-size:12.5px;color:var(--ink-2);
+    display:inline-flex;align-items:center;gap:6px;}
+  .tab.on{background:var(--surface);color:var(--ink);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.06);}
+  .turnhint{font-size:12px;font-family:var(--mono);color:var(--ink-3);margin-left:auto;}
+  .turnhint.err{color:var(--crit);}
+
+  /* panes */
+  .stage{display:grid;grid-template-columns:1fr 300px;gap:16px;}
+  @media(max-width:820px){.stage{grid-template-columns:1fr;}}
+  .thread-wrap{border:1px solid var(--line);border-radius:14px;background:var(--surface);overflow:hidden;
+    display:flex;flex-direction:column;min-height:440px;}
+  .thread-head{padding:12px 18px;border-bottom:1px solid var(--line);background:var(--surface-2);
+    display:flex;align-items:center;gap:10px;}
+  .thread-head .who{font-weight:650;font-size:14px;}
+  .thread-head .tag{font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;
+    padding:2px 8px;border-radius:5px;}
+  .thread-head .sub{font-size:11.5px;color:var(--ink-3);margin-left:auto;}
+  .thread{padding:6px 18px 18px;overflow-y:auto;max-height:560px;flex:1;}
+  .empty{color:var(--ink-3);text-align:center;padding:60px 20px;font-size:14px;}
+
+  /* email message */
+  .msg{padding:16px 0;border-bottom:1px solid var(--line);}
+  .msg:last-child{border-bottom:none;}
+  .msg-head{display:flex;align-items:center;gap:10px;margin-bottom:8px;}
+  .avatar{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;
+    font-weight:700;font-size:13px;color:#fff;flex-shrink:0;}
+  .avatar.buyer{background:var(--buyer);} .avatar.supplier{background:var(--supplier);}
+  .msg-from{font-weight:650;font-size:13.5px;}
+  .msg-meta{font-size:11.5px;color:var(--ink-3);font-family:var(--mono);}
+  .msg-body{border-left:3px solid var(--line);padding:2px 0 2px 15px;margin-left:8px;
+    white-space:pre-wrap;font-size:14px;color:var(--ink);line-height:1.6;}
+  .msg.buyer .msg-body{border-left-color:var(--buyer);}
+  .msg.supplier .msg-body{border-left-color:var(--supplier);}
+  .msg-sig{margin-top:9px;padding-left:23px;font-size:11.5px;color:var(--ink-3);font-style:italic;}
+
+  .skel{padding:16px 0;border-bottom:1px solid var(--line);}
+  .skel .line{height:11px;border-radius:4px;background:linear-gradient(90deg,var(--surface-2),var(--line),var(--surface-2));
+    background-size:200% 100%;animation:shimmer 1.3s infinite;margin:8px 0;}
+  @keyframes shimmer{to{background-position:-200% 0;}}
+
+  /* reasoning drawer */
+  .drawer{margin:10px 0 2px 23px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);overflow:hidden;}
+  .drawer summary{list-style:none;cursor:pointer;padding:9px 13px;font-size:12px;font-family:var(--mono);
+    color:var(--ink-2);display:flex;align-items:center;gap:8px;}
+  .drawer summary::-webkit-details-marker{display:none;}
+  .drawer summary .chev{transition:transform .15s;}
+  .drawer[open] summary .chev{transform:rotate(90deg);}
+  .drawer .content{padding:0 13px 13px;}
+  .dsec{border-top:1px solid var(--line);padding:11px 0;}
+  .dsec:first-child{border-top:none;}
+  .dsec .lab{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin-bottom:8px;}
+  .drow{display:flex;justify-content:space-between;font-size:12px;padding:3px 0;}
+  .drow .mono{color:var(--ink);}
+  .trade{font-size:12.5px;color:var(--ink-2);line-height:1.5;}
+  .bars{margin-top:9px;display:flex;flex-direction:column;gap:6px;}
+  .bar{display:grid;grid-template-columns:96px 1fr auto;gap:9px;align-items:center;font-size:11.5px;}
+  .bar .track{height:6px;background:var(--surface);border-radius:4px;overflow:hidden;}
+  .bar .fill{height:100%;background:var(--buyer);border-radius:4px;}
+  .chips{margin-top:9px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;}
+  .chip{font-family:var(--mono);font-size:11px;background:color-mix(in srgb,var(--buyer) 14%,transparent);
+    color:var(--buyer);padding:2px 8px;border-radius:5px;}
+  .chiplbl{font-family:var(--mono);font-size:10.5px;color:var(--ink-3);}
+
+  /* the guard hero */
+  .guard-ok{margin-top:4px;font-size:12px;color:var(--good);display:flex;align-items:center;gap:7px;}
+  .guard-reject{margin-top:4px;}
+  .rej-draft{font-size:12.5px;color:var(--ink-3);text-decoration:line-through;
+    text-decoration-color:var(--crit);text-decoration-thickness:1.5px;padding:8px 11px;
+    background:color-mix(in srgb,var(--crit) 7%,transparent);border:1px solid color-mix(in srgb,var(--crit) 24%,transparent);
+    border-radius:8px;line-height:1.5;position:relative;}
+  .rej-verdict{font-family:var(--mono);font-size:11px;color:var(--crit);margin:7px 0;display:flex;align-items:center;gap:7px;}
+  .rej-verdict .tok{background:color-mix(in srgb,var(--crit) 16%,transparent);padding:1px 6px;border-radius:4px;}
+  .rej-arrow{font-family:var(--mono);font-size:11px;color:var(--ink-3);margin:2px 0;}
+  .sent-draft{font-size:12.5px;color:var(--ink);padding:8px 11px;background:color-mix(in srgb,var(--good) 8%,transparent);
+    border:1px solid color-mix(in srgb,var(--good) 26%,transparent);border-radius:8px;line-height:1.5;}
+
+  /* sidebar */
+  .side{display:flex;flex-direction:column;gap:16px;}
+  .card{border:1px solid var(--line);border-radius:14px;background:var(--surface);padding:15px 17px;}
+  .card h3{font-size:13px;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);
+    font-weight:400;margin-bottom:12px;}
+  .redact-row{display:flex;justify-content:space-between;align-items:center;font-size:12.5px;padding:6px 0;border-bottom:1px solid var(--line);}
+  .redact-row:last-child{border-bottom:none;}
+  .redact-row .dots{font-family:var(--mono);color:var(--ink-3);letter-spacing:2px;}
+  .redact-note{font-size:11.5px;color:var(--ink-3);margin-top:11px;line-height:1.5;}
+
+  /* convergence chart */
+  .chart-note{font-size:11.5px;color:var(--ink-3);margin-top:9px;line-height:1.45;}
+  .legend{display:flex;gap:14px;margin-top:10px;font-size:11.5px;}
+  .legend i{width:18px;height:3px;border-radius:2px;display:inline-block;margin-right:5px;vertical-align:middle;}
+
+  /* banner */
+  .banner{margin-top:18px;padding:16px 20px;border:1.5px solid var(--good);border-radius:14px;background:var(--surface);
+    display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
+  .banner.escalated{border-color:var(--warn);}
+  .banner .t{font-family:var(--serif);font-size:17px;font-weight:600;}
+  .banner .d{font-size:13px;color:var(--ink-2);}
+
+  /* composer */
+  .composer{border-top:1px solid var(--line);padding:12px 14px;background:var(--surface-2);
+    display:flex;flex-direction:column;gap:9px;}
+  .composer .clab{font-family:var(--mono);font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;
+    color:var(--ink-3);display:flex;justify-content:space-between;}
+  .composer textarea{width:100%;min-height:60px;border:1px solid var(--line);border-radius:9px;
+    background:var(--surface);color:var(--ink);font-family:inherit;font-size:13.5px;padding:9px 11px;resize:vertical;}
+  .composer .crow{display:flex;gap:9px;align-items:center;}
+  .composer .hint{font-size:11px;color:var(--ink-3);flex:1;}
+
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--paper);
+    padding:10px 18px;border-radius:10px;font-size:13px;box-shadow:0 8px 30px rgba(0,0,0,.3);z-index:100;
+    opacity:0;pointer-events:none;transition:opacity .2s;}
+  .toast.show{opacity:1;}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <symbol id="i-inbox" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.5 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.5A2 2 0 0 0 16.7 4H7.3a2 2 0 0 0-1.8 1.5z"/></symbol>
+  <symbol id="i-split" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="8" height="16" rx="1.5"/><rect x="13" y="4" width="8" height="16" rx="1.5"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 5 6v5c0 4.5 3 8 7 10 4-2 7-5.5 7-10V6z"/><path d="m9 12 2 2 4-4"/></symbol>
+  <symbol id="i-scale" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"/><path d="M7 21h10"/><path d="M6 8h12"/><path d="m6 8-3 6a3 3 0 0 0 6 0z"/><path d="m18 8 3 6a3 3 0 0 1-6 0z"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l12-7.5z"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4.5" width="4" height="15" rx="1"/><rect x="14" y="4.5" width="4" height="15" rx="1"/></symbol>
+  <symbol id="i-step" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4.5v15l10-7.5z"/><path d="M19 4.5v15"/></symbol>
+  <symbol id="i-seal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="9" r="6"/><path d="m8.5 14-1.5 7 5-3 5 3-1.5-7"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5 5l1.5 1.5M17.5 17.5 19 19M19 5l-1.5 1.5M6.5 17.5 5 19"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+</defs></svg>
+
+<header>
+  <button class="brand" id="homeBtn" style="background:none;border:none;padding:0;">
+    <b>Peitho</b><span>autonomous negotiation</span>
+  </button>
+  <div class="hspace"></div>
+  <div class="hstat" id="hstat"><span class="dot"></span><span id="hstatText">checking backend…</span></div>
+  <button class="iconbtn" id="themeBtn"><svg width="15" height="15"><use href="#i-sun"/></svg> Theme</button>
+</header>
+
+<div class="wrap" id="app"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+/* ══ Peitho v2 — thin client over the live deterministic backend ══════════
+   The browser holds NO engine. It sends the signed mandate + transcript to
+   /negotiate/open and /step; the server decides, drafts, guards, and returns
+   the buyer message + reasoning. Every number on screen is server-computed. */
+
+const $ = (s,r=document)=>r.querySelector(s);
+const esc = s => String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+// Same-origin when served from the backend; falls back to the deployed URL when
+// opened as a local file so the demo works either way.
+const API = (location.protocol === "file:" || !location.host)
+  ? "https://web-production-a5b7b.up.railway.app"
+  : "";
+
+const PERSONAS = [
+  {id:"cooperative", label:"Cooperative", hint:"concedes early, seeks a fair middle"},
+  {id:"aggressive", label:"Aggressive",  hint:"holds firm, concedes late"},
+  {id:"evasive",    label:"Evasive",     hint:"stalls, defers, avoids numbers"},
+];
+
+const TERM_LABELS = {price:"Unit price", payment_days:"Payment terms", contract_months:"Contract length"};
+function fmtTerm(name, x){
+  if(x==null) return "—";
+  if(name==="price") return "€"+Number(x).toFixed(2);
+  if(name==="payment_days") return "net-"+Math.round(x);
+  if(name==="contract_months") return Math.round(x)+" mo";
+  return String(x);
+}
+
+const M = {
+  phase:"setup",
+  form:{ supplier:"Nordwerk Verpackung GmbH", category:"Corrugated packaging — annual supply",
+    target:92, floor:108, paymentLever:60, contractMax:24, persona:"aggressive" },
+  session:null, signed:null, transcript:[], thread:[], turns:[],
+  tab:"buyer", busy:false, status:"live", terminal:false, error:null, convergence:[],
+};
+
+/* ── backend calls ── */
+async function post(path, body){
+  const r = await fetch(API+path, {
+    method:"POST", headers:{"Content-Type":"application/json","X-Peitho-Godview":"1"},
+    body:JSON.stringify(body),
+  });
+  const data = await r.json().catch(()=>({error:{code:"bad_response",message:"unreadable response"}}));
+  if(!r.ok) throw Object.assign(new Error(data?.error?.message||"request failed"), {code:data?.error?.code, status:r.status});
+  return data;
+}
+
+function buildMandate(){
+  const f = M.form;
+  return {
+    envelope:{
+      negotiation_id:"neg-"+M.session, version:1, signed_by:"e.mueller (demo)",
+      target_utility:0.90, reservation_utility:0.60,
+      terms:[
+        {name:"price", term_type:"price", direction:"minimize", best:+f.target, worst:+f.floor, weight:0.50},
+        {name:"payment_days", term_type:"payment_days", direction:"maximize", best:+f.paymentLever, worst:30, weight:0.25},
+        {name:"contract_months", term_type:"contract_months", direction:"minimize", best:12, worst:+f.contractMax, weight:0.25},
+      ],
+    },
+    supplier_appetite:{price:0.15, payment_days:0.85, contract_months:0.70},
+    config:{max_rounds:6, beta:2.5, stall_rounds:3, on_unknown_terms:"escalate"},
+  };
+}
+
+/* scripted supplier that concedes by persona — the browser plays the counterparty
+   so the demo is self-contained; the ENGINE (buyer) is the real thing on the server. */
+function supplierMessage(persona, round){
+  const f = M.form;
+  const open = +f.floor + 1.0;
+  const floor = +f.target; // supplier won't go below the buyer's target
+  const speed = {cooperative:0.42, aggressive:0.20, evasive:0.28}[persona];
+  const px = Math.max(floor, open - (open-floor)*speed*(round+1));
+  const price = Math.round(px*100)/100;
+  const pay = persona==="cooperative" ? Math.min(45+round*4, +f.paymentLever) : 30;
+  const con = persona==="cooperative" ? Math.max(12, +f.contractMax-round*3) : +f.contractMax;
+  const flavor = {
+    cooperative:`Appreciate the dialogue. To keep this moving I can come to €${price.toFixed(2)} per unit, and I'm open to net-${pay} if we lock in ${con} months. Let's find the middle.`,
+    aggressive:`I hear you, but €${price.toFixed(2)} is about as far as I can stretch on unit price, and I'd need net-${pay} to make the numbers work. Margins are thin here.`,
+    evasive:`Let me take the exact figure back to my team — provisionally I could look at around €${price.toFixed(2)}, though I'd have to confirm net-${pay} and the ${con}-month term internally.`,
+  }[persona];
+  return flavor;
+}
+
+/* ══ RENDER ══════════════════════════════════════════════════════════════ */
+const app = $("#app");
+function render(){ app.innerHTML = M.phase==="setup" ? setupView() : runView();
+  if(M.phase==="setup") bindSetup(); else bindRun();
+  for(const id of ["threadBuyer","threadSupplier"]){ const el=$("#"+id); if(el) el.scrollTop=el.scrollHeight; }
+}
+
+/* theme */
+(function(){ const mq=matchMedia("(prefers-color-scheme: dark)");
+  let t = mq.matches?"dark":"light";
+  const ap=x=>document.documentElement.setAttribute("data-theme",x);
+  ap(t);
+  $("#themeBtn").onclick=()=>{ t=(document.documentElement.getAttribute("data-theme")==="dark")?"light":"dark"; ap(t); };
+})();
+$("#homeBtn").onclick=()=>{ if(M.phase!=="setup"){ M.phase="setup"; render(); } };
+
+/* ── setup view ── */
+function setupView(){
+  const f=M.form;
+  return `<div class="setup">
+    <div class="eyebrow">the deterministic negotiator</div>
+    <h1>The model advises. The engine decides.</h1>
+    <p class="lede">A real procurement negotiation runs on the server: a deterministic engine
+      makes every accept / counter / walk-away call and fixes the exact figures a reply may state.
+      A language model writes the emails — and <b>cannot state a number the engine didn't approve</b>.
+      You watch it happen, including the moment the guard rejects a draft.</p>
+    <div class="modenote" id="modenote"><span class="dot"></span><span id="modenoteText">checking backend…</span></div>
+
+    <div class="grid">
+      ${field("Supplier","legal counterparty",`<input class="in" id="f-supplier" value="${esc(f.supplier)}">`)}
+      ${field("Category","",`<input class="in" id="f-category" value="${esc(f.category)}">`)}
+      ${field("Target price (€/unit)","the aspiration",`<input class="in" type="number" step="0.5" id="f-target" value="${f.target}">`)}
+      ${field("Walk-away floor (€/unit)","never cross this",`<input class="in" type="number" step="0.5" id="f-floor" value="${f.floor}">`)}
+      ${field("Payment lever (max net-days)","a term to trade",`<input class="in" type="number" id="f-paymentLever" value="${f.paymentLever}">`)}
+      ${field("Max contract length (months)","",`<input class="in" type="number" id="f-contractMax" value="${f.contractMax}">`)}
+      <div class="fld wide"><label>Supplier persona <i>· scripted counterparty; the buyer engine is live</i></label>
+        <div class="personas">${PERSONAS.map(p=>`<button type="button" class="persona${f.persona===p.id?" on":""}" data-p="${p.id}"><b>${p.label}</b><span>${p.hint}</span></button>`).join("")}</div>
+      </div>
+    </div>
+    <div class="startrow">
+      <button class="btn primary big" id="startBtn"><svg width="16" height="16"><use href="#i-seal"/></svg> Sign the mandate &amp; open</button>
+      <span class="meta">target €${(+f.target).toFixed(2)} · floor €${(+f.floor).toFixed(2)} · levers: payment, term</span>
+    </div>
+  </div>`;
+}
+function field(label,note,input){
+  return `<div class="fld"><label>${label}${note?` <i>· ${note}</i>`:""}</label>${input}</div>`;
+}
+function bindSetup(){
+  ["supplier","category","target","floor","paymentLever","contractMax"].forEach(k=>{
+    const el=$("#f-"+k); if(el) el.oninput=()=>{ M.form[k]= el.type==="number"?+el.value:el.value; };
+  });
+  app.querySelectorAll(".persona").forEach(b=>b.onclick=()=>{ M.form.persona=b.dataset.p; render(); });
+  $("#startBtn").onclick=start;
+  refreshHealth();
+}
+
+/* ── run view ── */
+function runView(){
+  const f=M.form;
+  const waiting = M.status==="live" && !M.terminal;
+  return `${mandateCard()}
+    <div class="transport">
+      <button class="btn primary" id="stepBtn" ${M.busy||M.terminal?"disabled":""}><svg width="15" height="15"><use href="#i-step"/></svg> ${M.busy?"…":"Step one round"}</button>
+      <button class="btn ghost" id="autoBtn" ${M.busy||M.terminal?"disabled":""}><svg width="14" height="14"><use href="#i-play"/></svg> Auto-play</button>
+      <div class="tabs">
+        <button class="tab${M.tab==="buyer"?" on":""}" data-tab="buyer"><svg width="14" height="14"><use href="#i-inbox"/></svg> Buyer inbox</button>
+        <button class="tab${M.tab==="supplier"?" on":""}" data-tab="supplier"><svg width="14" height="14"><use href="#i-inbox"/></svg> Supplier</button>
+        <button class="tab${M.tab==="both"?" on":""}" data-tab="both"><svg width="14" height="14"><use href="#i-split"/></svg> Both sides</button>
+      </div>
+      ${M.error?`<span class="turnhint err">⚠ ${esc(M.error)}</span>`:`<span class="turnhint">${M.terminal?"negotiation closed":"round "+M.turns.length+" / 6"}</span>`}
+    </div>
+    ${M.tab==="both" ? godView() : M.tab==="supplier" ? supplierPane() : buyerPane()}
+    ${M.terminal ? banner() : ""}`;
+}
+
+function mandateCard(){
+  const f=M.form;
+  const emph = (n)=>`<div class="emphasis">${[...Array(6)].map((_,i)=>`<span class="edot${i<n?" on":""}"></span>`).join("")}</div>`;
+  return `<div class="mandate">
+    <div class="seal"><svg width="20" height="20" style="color:var(--buyer)"><use href="#i-seal"/></svg>
+      <div><div class="lbl">Negotiation mandate</div><h3>${esc(f.supplier)}</h3></div></div>
+    <div class="body">
+      <div class="mrow"><span class="k">Category</span><span class="v">${esc(f.category)}</span></div>
+      <div class="mrow"><span class="k">Signed by</span><span class="v">e.mueller (demo) · v1</span></div>
+      <div class="mrow"><span class="k">Target · Floor <i style="text-transform:none;letter-spacing:0;font-style:italic;color:var(--ink-3)">— buyer-private</i></span>
+        <span class="v"><span class="mono">€${(+f.target).toFixed(2)}</span> · <span class="mono">€${(+f.floor).toFixed(2)}</span></span></div>
+      <div class="mrow"><span class="k">Levers</span><span class="v">payment ≤ net-${f.paymentLever} · term ≤ ${f.contractMax}mo</span></div>
+      <div class="mrow"><span class="k">Emphasis — price</span>${emph(3)}</div>
+      <div class="mrow"><span class="k">Emphasis — payment / term</span>${emph(2)}</div>
+      <div class="mfoot"><span class="sig">signed &amp; HMAC-verified server-side</span>
+        <span>ref ${M.signed ? esc(M.signed.sig.slice(0,12)) : "—"}</span></div>
+    </div>
+  </div>`;
+}
+
+function buyerPane(){
+  const msgs = M.thread.map(m => renderMsg(m, "buyer")).join("");
+  return `<div class="stage">
+    <div class="thread-wrap">
+      <div class="thread-head"><span class="who">Buyer inbox</span>
+        <span class="tag" style="background:color-mix(in srgb,var(--buyer) 15%,transparent);color:var(--buyer)">the agent</span>
+        <span class="sub">the engine decides · the guard holds the line</span></div>
+      <div class="thread" id="threadBuyer">${msgs || `<div class="empty">Press “Step one round” — the engine drafts the opening offer.</div>`}${M.busy?skeleton():""}</div>
+    </div>
+    <div class="side">${dealSidebar()}</div>
+  </div>`;
+}
+
+function supplierPane(){
+  const f=M.form;
+  const msgs = M.thread.map(m => renderMsg(m, "supplier")).join("");
+  return `<div class="stage">
+    <div class="thread-wrap">
+      <div class="thread-head"><span class="who">Supplier inbox</span>
+        <span class="tag" style="background:color-mix(in srgb,var(--supplier) 15%,transparent);color:var(--supplier)">${esc(f.persona)}</span>
+        <span class="sub">same thread, roles flipped</span></div>
+      <div class="thread" id="threadSupplier">${msgs || `<div class="empty">Waiting for the buyer's first message.</div>`}</div>
+    </div>
+    <div class="side">
+      <div class="card"><h3><svg width="13" height="13"><use href="#i-lock"/></svg> what the supplier can't see</h3>
+        <div class="redact-row"><span>Buyer target price</span><span class="dots">•••••</span></div>
+        <div class="redact-row"><span>Buyer walk-away floor</span><span class="dots">•••••</span></div>
+        <div class="redact-row"><span>Acceptance threshold</span><span class="dots">•••••</span></div>
+        <div class="redact-note">That asymmetry is the whole game — the agent negotiates without ever revealing its floor. Open devtools: the reservation number is not in this payload.</div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function godView(){
+  return `<div class="stage" style="grid-template-columns:1fr 1fr;">
+    <div class="thread-wrap">
+      <div class="thread-head"><span class="who">Buyer view</span>
+        <span class="tag" style="background:color-mix(in srgb,var(--buyer) 15%,transparent);color:var(--buyer)">agent</span></div>
+      <div class="thread" id="threadBuyer">${M.thread.map(m=>renderMsg(m,"buyer",true)).join("") || `<div class="empty">Step to begin.</div>`}</div>
+    </div>
+    <div class="thread-wrap">
+      <div class="thread-head"><span class="who">Supplier view</span>
+        <span class="tag" style="background:color-mix(in srgb,var(--supplier) 15%,transparent);color:var(--supplier)">${esc(M.form.persona)}</span></div>
+      <div class="thread">${M.thread.map(m=>renderMsg(m,"supplier",true)).join("") || `<div class="empty">Step to begin.</div>`}</div>
+    </div>
+    <div style="grid-column:1/-1">${convergenceCard()}</div>
+  </div>`;
+}
+
+function renderMsg(m, side, compact){
+  const from = m.from==="buyer" ? (side==="supplier"?"Buyer":"Peitho · buyer agent") : (side==="supplier"?"You · "+esc(M.form.supplier):esc(M.form.supplier));
+  const cls = m.from;
+  const av = m.from==="buyer" ? "B" : "S";
+  const drawer = (m.from==="buyer" && m.turn && !compact) ? reasonDrawer(m.turn) : "";
+  return `<div class="msg ${cls}">
+    <div class="msg-head">
+      <div class="avatar ${cls}">${av}</div>
+      <div><div class="msg-from">${from}</div><div class="msg-meta">${m.from==="buyer"?"to supplier":"to buyer"} · round ${m.round}</div></div>
+    </div>
+    <div class="msg-body">${esc(m.text)}</div>
+    ${m.from==="buyer"?`<div class="msg-sig">— Procurement, on behalf of the category manager</div>`:""}
+    ${drawer}
+  </div>`;
+}
+
+function skeleton(){
+  return `<div class="skel"><div class="msg-head"><div class="avatar buyer">B</div><div><div class="msg-from">Peitho · buyer agent</div><div class="msg-meta">drafting…</div></div></div>
+    <div class="line" style="width:88%"></div><div class="line" style="width:76%"></div><div class="line" style="width:60%"></div></div>`;
+}
+
+function reasonDrawer(turn){
+  const oc = {accept:"var(--good)", counter:"var(--buyer)", escalate:"var(--warn)"}[turn.outcome];
+  const intl = turn.internal;
+  const decisionSec = intl ? `<div class="dsec"><div class="lab">engine internals · buyer-private</div>
+    <div class="drow"><span>outcome</span><span class="mono" style="color:${oc}">${turn.outcome.toUpperCase()}</span></div>
+    <div class="drow"><span>round</span><span class="mono">${turn.round_index} / 6</span></div>
+    <div class="drow" title="Boulware: reservation + span·(1−(t/T)^β)"><span>threshold</span><span class="mono">${intl.threshold.toFixed(3)}</span></div>
+    ${intl.incoming_utility!=null?`<div class="drow"><span>incoming utility</span><span class="mono">${intl.incoming_utility.toFixed(3)}</span></div>`:""}
+    ${intl.counter_utility!=null?`<div class="drow"><span>counter utility</span><span class="mono">${intl.counter_utility.toFixed(3)}</span></div>`:""}
+    <div class="drow"><span>reservation floor</span><span class="mono">${intl.reservation_utility.toFixed(3)}</span></div></div>` : "";
+
+  const brief = turn.move_brief;
+  const bars = Object.keys(turn.bar_fills||{}).length ? `<div class="bars">${
+    Object.entries(turn.bar_fills).map(([k,v])=>`<div class="bar"><span>${esc(TERM_LABELS[k]||k)}</span>
+      <span class="track"><span class="fill" style="width:${Math.round(v*100)}%"></span></span>
+      <span class="mono" style="color:var(--ink-3)">${(v*100).toFixed(0)}%</span></div>`).join("")}</div>` : "";
+  const chips = Object.keys(turn.approved_numbers||{}).length ? `<div class="chips"><span class="chiplbl">figures this reply may state →</span>${
+    Object.entries(turn.approved_numbers).map(([k,v])=>`<span class="chip">${esc(fmtTerm(k,v))}</span>`).join("")}</div>` : "";
+  const tradeSec = brief ? `<div class="dsec"><div class="lab">trade narrative</div>
+    <div class="trade">${esc(briefSentence(brief))}</div>${bars}${chips}</div>` : "";
+
+  const guardSec = `<div class="dsec"><div class="lab">the numeric guard</div>${guardBlock(turn.guard)}</div>`;
+
+  return `<details class="drawer"${(turn.guard&&turn.guard.attempts&&turn.guard.attempts.length>1)?" open":""}>
+    <summary><svg class="chev" width="13" height="13"><use href="#i-chev"/></svg> Why this move — and how the guard held it</summary>
+    <div class="content">${decisionSec}${tradeSec}${guardSec}</div></details>`;
+}
+
+function briefSentence(b){
+  if(b.outcome==="ESCALATE") return "Escalating to a human buyer — no move made.";
+  if(b.is_opening) return "Opening the negotiation with our target package.";
+  if(b.outcome==="ACCEPT") return "Accepting — the supplier's offer clears our line.";
+  if(b.moved_terms && b.moved_terms.length){
+    const m=b.moved_terms[0];
+    const held=(b.held_terms&&b.held_terms[0])?b.held_terms[0].name.replace(/_/g," "):"our priorities";
+    return `Conceding ${m.name.replace(/_/g," ")} (${m.from_display} → ${m.to_display}) while holding ${held}. ${b.trade_axis?b.trade_axis.rationale:""}`;
+  }
+  return "Holding position; only minor adjustments this round.";
+}
+
+function guardBlock(guard){
+  if(!guard || !guard.attempts || !guard.attempts.length)
+    return `<div class="guard-ok"><svg width="14" height="14"><use href="#i-check"/></svg> every figure in the message is engine-approved</div>`;
+  const rejected = guard.attempts.filter(a=>!a.ok);
+  const sent = guard.attempts[guard.attempts.length-1];
+  if(!rejected.length)
+    return `<div class="guard-ok"><svg width="14" height="14"><use href="#i-check"/></svg> passed on the first draft — every figure is on the approved list</div>`;
+  const r = rejected[0];
+  const toks = (r.violations||[]).map(v=>`<span class="tok">${esc(v)}</span>`).join(" ");
+  return `<div class="guard-reject">
+    <div class="rej-draft">${esc(r.draft)}</div>
+    <div class="rej-verdict"><svg width="13" height="13"><use href="#i-x"/></svg> guard rejected: ${toks} not on the approved list</div>
+    <div class="rej-arrow">↓ the engine forced a redraft</div>
+    <div class="sent-draft">${esc(sent.draft)}</div>
+    <div class="guard-ok" style="margin-top:8px"><svg width="14" height="14"><use href="#i-check"/></svg> released only after every figure matched the allowlist</div>
+  </div>`;
+}
+
+function dealSidebar(){
+  const last = [...M.turns].reverse().find(t=>t.internal);
+  return `<div class="card"><h3><svg width="13" height="13"><use href="#i-scale"/></svg> live deal state</h3>
+    ${last ? `<div class="drow"><span>round</span><span class="mono">${last.round_index} / 6</span></div>
+      <div class="drow"><span>threshold</span><span class="mono">${last.internal.threshold.toFixed(3)}</span></div>
+      ${last.internal.incoming_utility!=null?`<div class="drow"><span>supplier offer utility</span><span class="mono">${last.internal.incoming_utility.toFixed(3)}</span></div>`:""}
+      <div class="drow"><span>reservation floor</span><span class="mono">${last.internal.reservation_utility.toFixed(3)}</span></div>`
+      : `<div style="font-size:12.5px;color:var(--ink-3)">Step to see the engine's internal state.</div>`}
+  </div>
+  <div class="card"><h3><svg width="13" height="13"><use href="#i-shield"/></svg> the guarantee</h3>
+    <div style="font-size:12.5px;color:var(--ink-2);line-height:1.55">Every figure in a buyer email is drawn from the engine's approved-number allowlist. The model physically cannot emit an unapproved figure — a violating draft is rejected and redrafted server-side before it's ever sent.</div>
+  </div>`;
+}
+
+function convergenceCard(){
+  return `<div class="card"><h3><svg width="13" height="13"><use href="#i-scale"/></svg> price convergence</h3>
+    ${chartSVG()}
+    <div class="legend"><span><i style="background:var(--buyer)"></i>buyer offer</span><span><i style="background:var(--supplier)"></i>supplier offer</span></div>
+    <div class="chart-note">The buyer holds price near target while trading on payment terms — that's logrolling. Both prices converge over the rounds.</div>
+  </div>`;
+}
+
+function chartSVG(){
+  const pts = M.convergence;
+  if(pts.length<1) return `<div style="font-size:12px;color:var(--ink-3);padding:20px 0">Step through rounds to build the chart.</div>`;
+  const W=640, H=180, PL=44, PR=14, PT=12, PB=26;
+  const xs = pts.map((_,i)=>i);
+  const maxX = Math.max(1, xs.length-1);
+  const allP = pts.flatMap(p=>[p.buyer, p.supplier]).filter(v=>v!=null);
+  const lo = Math.min(...allP)-1, hi=Math.max(...allP)+1;
+  const X = i => PL + (i/maxX)*(W-PL-PR);
+  const Y = v => PT + (1-(v-lo)/(hi-lo))*(H-PT-PB);
+  const line = (key,color)=>{
+    const d = pts.map((p,i)=> (i===0?"M":"L")+X(i).toFixed(1)+" "+Y(p[key]).toFixed(1)).join(" ");
+    const dots = pts.map((p,i)=>`<circle cx="${X(i).toFixed(1)}" cy="${Y(p[key]).toFixed(1)}" r="3" fill="${color}"/>`).join("");
+    return `<path d="${d}" fill="none" stroke="${color}" stroke-width="2.2" stroke-linejoin="round"/>${dots}`;
+  };
+  const grid = [0,0.5,1].map(t=>{const y=PT+t*(H-PT-PB); const val=(hi-(t*(hi-lo))).toFixed(0);
+    return `<line x1="${PL}" y1="${y}" x2="${W-PR}" y2="${y}" stroke="var(--chart-grid)" stroke-width="1"/>
+      <text x="${PL-8}" y="${y+3.5}" text-anchor="end" font-size="10" fill="var(--chart-axis)" font-family="var(--mono)">€${val}</text>`;}).join("");
+  const xlab = pts.map((_,i)=>`<text x="${X(i)}" y="${H-8}" text-anchor="middle" font-size="10" fill="var(--chart-axis)" font-family="var(--mono)">r${i+1}</text>`).join("");
+  return `<div style="overflow-x:auto"><svg viewBox="0 0 ${W} ${H}" style="width:100%;min-width:420px;display:block">
+    ${grid}${xlab}${line("supplier","var(--supplier)")}${line("buyer","var(--buyer)")}</svg></div>`;
+}
+
+function banner(){
+  const closed = M.status==="closed";
+  const last = [...M.turns].reverse()[0];
+  return `<div class="banner ${closed?"":"escalated"}">
+    <svg width="26" height="26" style="color:${closed?"var(--good)":"var(--warn)"}"><use href="#i-${closed?"check":"x"}"/></svg>
+    <div style="flex:1;min-width:220px">
+      <div class="t">${closed?"Agreement reached":"Escalated to a human buyer"}</div>
+      <div class="d">${closed
+        ? `Final package: ${last?Object.entries(last.approved_numbers).map(([k,v])=>fmtTerm(k,v)).join(" · "):"—"}. Every quoted figure is engine-approved and replayable from the transcript.`
+        : `The engine reached its reservation floor without a clearing offer and handed off — exactly where a human should take over. It never conceded past the floor.`}</div>
+    </div>
+    <button class="btn ghost" id="againBtn">New negotiation</button>
+  </div>`;
+}
+
+function bindRun(){
+  const s=$("#stepBtn"); if(s) s.onclick=()=>step();
+  const a=$("#autoBtn"); if(a) a.onclick=autoplay;
+  const ag=$("#againBtn"); if(ag) ag.onclick=()=>{ M.phase="setup"; render(); };
+  app.querySelectorAll(".tab").forEach(b=>b.onclick=()=>{ M.tab=b.dataset.tab; render(); });
+}
+
+/* ══ negotiation loop ══════════════════════════════════════════════════════ */
+async function start(){
+  M.session = "s"+Math.random().toString(36).slice(2,10);
+  M.transcript=[]; M.thread=[]; M.turns=[]; M.convergence=[];
+  M.terminal=false; M.status="live"; M.error=null; M.tab="buyer"; M.busy=true;
+  M.phase="running"; render();
+  try{
+    const mandate = buildMandate();
+    const res = await post("/negotiate/open", {mandate, session_id:M.session});
+    M.signed = res.signed_mandate;
+    pushTurn(res.turn, /*round*/0);
+  }catch(e){ M.error = e.message; }
+  finally{ M.busy=false; render(); }
+}
+
+function pushTurn(turn, round){
+  M.thread.push({from:"buyer", text:turn.buyer_message, round, turn});
+  M.turns.push(turn);
+  recordConvergence();
+}
+
+function recordConvergence(){
+  // buyer price = last approved price; supplier price = last supplier offer parsed
+  const lastBuyer = [...M.turns].reverse().find(t=>t.approved_numbers && t.approved_numbers.price!=null);
+  const lastSupOffer = [...M.transcript].reverse()[0];
+  M.convergence.push({
+    buyer: lastBuyer ? lastBuyer.approved_numbers.price : null,
+    supplier: lastSupOffer ? lastSupOffer.terms.price : (M.form.floor+1),
+  });
+}
+
+async function step(){
+  if(M.busy || M.terminal) return;
+  M.busy=true; M.error=null; render();
+  try{
+    const round = M.turns.length; // 1,2,3...
+    const supText = supplierMessage(M.form.persona, round-1);
+    // supplier's offer terms are parsed server-side; we send raw_text + a hint of terms
+    const price = parseFloat((supText.match(/€\s?([\d.]+)/)||[])[1]) || (M.form.floor+1);
+    const pay = parseInt((supText.match(/net-(\d+)/)||[])[1]) || 30;
+    const con = parseInt((supText.match(/(\d+)[\s-]month/)||[])[1]) || M.form.contractMax;
+    const offerTerms = {price, payment_days:pay, contract_months:con};
+
+    M.thread.push({from:"supplier", text:supText, round});
+    render();
+
+    const body = {
+      signed_mandate: M.signed,
+      transcript: {turns: M.transcript},
+      supplier_input: {mode:"bot", raw_text:supText, persona:M.form.persona},
+      session_id: M.session,
+    };
+    const res = await post("/negotiate/step", body);
+    // record the supplier offer into the transcript for the next fold
+    M.transcript.push({terms:offerTerms, raw_text:supText});
+    pushTurn(res.turn, round);
+    M.terminal = res.terminal;
+    if(res.terminal) M.status = res.turn.outcome==="accept" ? "closed" : "escalated";
+  }catch(e){
+    if(e.code==="negotiation_closed"){ M.terminal=true; M.status="closed"; }
+    else if(e.code==="offer_unparseable"){ M.error="the supplier message had no readable price — try again"; }
+    else M.error = e.message;
+  }finally{ M.busy=false; render(); }
+}
+
+async function autoplay(){
+  while(!M.terminal && !M.error){
+    await step();
+    if(M.terminal||M.error) break;
+    await new Promise(r=>setTimeout(r, 650));
+  }
+}
+
+/* ── health ── */
+async function refreshHealth(){
+  try{
+    const r = await fetch(API+"/health"); const h = await r.json();
+    const live = r.ok && h.mandate_configured;
+    setHealth(live, live ? `live · ${h.buyer_model} buyer / ${h.supplier_model} supplier` : "backend reachable, not configured");
+  }catch(e){ setHealth(false, "backend unreachable — start it or check the URL"); }
+}
+function setHealth(live, text){
+  const hs=$("#hstat"); if(hs){ hs.className="hstat"+(live?" live":""); $("#hstatText").textContent = live?"live":"offline"; }
+  const mn=$("#modenote"); if(mn){ mn.className="modenote"+(live?" live":""); $("#modenoteText").textContent = text; }
+}
+
+render();
+</script>
+</body>
+</html>

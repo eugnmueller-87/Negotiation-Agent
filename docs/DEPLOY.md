@@ -22,8 +22,14 @@ In the Railway service → **Variables**, add:
 |---|---|---|
 | `ANTHROPIC_API_KEY` | your Anthropic key | drafts buyer (Opus) + supplier (Haiku) |
 | `PEITHO_MANDATE_SECRET` | a random 32-byte hex | **required** — signs the mandate. Generate: `python -c "import secrets; print(secrets.token_hex(32))"` |
+| `DEMO_GODVIEW` | `1` | **set for the demo** — lets the reasoning drawer show the engine's internal threshold/utility (the whole point of the demo). Pair with the `X-Peitho-Godview` header the demo already sends. |
 | `HADES_API_KEY` | your Hades key | optional — enables live `/prepare` supplier research |
 | `HADES_URL` | `https://hades-production-b86a.up.railway.app` | optional |
+
+> **The demo UI** is served at the service root `/` (same app, same URL). Open
+> `https://<your-service>.up.railway.app/` in a browser and it runs the live
+> negotiation against Opus/Haiku. `/health` and the `/negotiate/*` API are on the
+> same host.
 
 Optional tuning (sensible defaults, override only if needed):
 `PEITHO_MANDATE_TTL` (3600), `PEITHO_RATE_PER_MIN` (20). Set `DEMO_GODVIEW=1`

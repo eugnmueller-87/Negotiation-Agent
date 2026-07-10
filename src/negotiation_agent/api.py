@@ -21,10 +21,12 @@ from __future__ import annotations
 
 import os
 import time
+from pathlib import Path
 
 try:
     from fastapi import FastAPI, Request
-    from fastapi.responses import JSONResponse
+    from fastapi.middleware.cors import CORSMiddleware
+    from fastapi.responses import FileResponse, JSONResponse
     from pydantic import BaseModel
 except ImportError as e:  # pragma: no cover - exercised only without the extra
     raise ImportError(
@@ -57,6 +59,21 @@ from negotiation_agent.wire import (
 )
 
 app = FastAPI(title="Negotiation Agent — negotiation API", version="2.0")
+
+# CORS: the negotiation endpoints are safe to call cross-origin — every request
+# carries a server-signed mandate, the engine is authority, and the abuse gates
+# (rate limit, TTL) bound cost. Allowing all origins lets the demo be served from
+# anywhere (or opened as a file) while still hitting the deployed backend.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["GET", "POST"],
+    allow_headers=["*"],
+)
+
+# The v2 demo is served from this same app (same-origin, one deploy, no CORS needed
+# in the common case). Path is resolved relative to the repo root at runtime.
+_DEMO_HTML = Path(__file__).resolve().parents[2] / "demo" / "peitho-v2.html"
 
 # Abuse gates (env-tunable). In-memory counters are correct for a single instance;
 # a multi-replica deploy needs Redis (documented in the architecture doc, §9).
@@ -98,6 +115,16 @@ def _err(code: str, message: str, status: int) -> JSONResponse:
 class PrepareRequest(BaseModel):
     contract_text: str
     research: bool = True
+
+
+@app.get("/", response_model=None)
+def demo() -> FileResponse | JSONResponse:
+    """Serve the v2 demo page at the root, so one URL is both API and UI."""
+    if _DEMO_HTML.is_file():
+        return FileResponse(_DEMO_HTML, media_type="text/html")
+    return JSONResponse(
+        content={"service": "Negotiation Agent v2 API", "health": "/health", "demo": "not bundled"}
+    )
 
 
 @app.post("/prepare", response_model=PreparedNegotiation)
