@@ -23,10 +23,6 @@ logger = logging.getLogger(__name__)
 
 _INDEX_PATH = Path(__file__).resolve().parents[3] / "data" / "kb_index.json"
 
-# A retrieved passage longer than this is truncated before it reaches the prompt — keeps
-# the advisory block bounded regardless of chunk size.
-_MAX_ADVICE_CHARS = 600
-
 
 @lru_cache(maxsize=1)
 def _load_index() -> Bm25Index | None:
@@ -55,18 +51,3 @@ def retrieve(query: str, *, tag: str | None = None, top_k: int = 3) -> list[Hit]
     if index is None:
         return []
     return index.query(query, top_k=top_k, tag=tag)
-
-
-def advice_lines(query: str, *, tag: str | None = None, top_k: int = 3) -> list[str]:
-    """Retrieved passages as short, source-attributed advice lines for the drafter prompt.
-
-    Each line is truncated to ``_MAX_ADVICE_CHARS`` and prefixed with its source, so the
-    drafter sees where the guidance came from and the block stays bounded.
-    """
-    lines: list[str] = []
-    for hit in retrieve(query, tag=tag, top_k=top_k):
-        text = hit.text.strip().replace("\n", " ")
-        if len(text) > _MAX_ADVICE_CHARS:
-            text = text[:_MAX_ADVICE_CHARS].rstrip() + "…"
-        lines.append(f"[{hit.source}] {text}")
-    return lines

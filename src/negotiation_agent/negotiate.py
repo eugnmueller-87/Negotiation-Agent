@@ -24,10 +24,12 @@ from negotiation_agent.envelope import Envelope, Offer
 from negotiation_agent.fallback import build_redraft_instruction, render_fallback
 from negotiation_agent.guard import check
 from negotiation_agent.intake import extract_contract
-from negotiation_agent.knowledge.retrieve import advice_lines
+from negotiation_agent.knowledge.bm25 import Hit
+from negotiation_agent.knowledge.retrieve import retrieve
 from negotiation_agent.llm import DraftClient
 from negotiation_agent.supplier_model import SupplierModel
 from negotiation_agent.wire import (
+    ConsultedSource,
     GuardAttempt,
     GuardAudit,
     InternalState,
@@ -37,6 +39,10 @@ from negotiation_agent.wire import (
 )
 
 _MAX_REDRAFTS = 2
+
+# A retrieved passage longer than this is truncated before it reaches the drafter prompt —
+# keeps the advisory block bounded regardless of chunk size.
+_MAX_ADVICE_CHARS = 600
 
 
 class NegotiationClosed(Exception):
@@ -77,26 +83,60 @@ def fold(
 
 
 # The map from an engine move to a knowledge-base query. Pure — turns what the engine did
-# (which terms moved/held, the round pressure) into retrieval text, so the advice matches
-# the actual move rather than a generic prompt.
-def _retrieve_advice(brief: MoveBrief) -> list[str]:
-    """Retrieve negotiation guidance for this move. Always safe: [] if the index is absent."""
+# (which terms moved/held, the round pressure) into retrieval text, so retrieval matches the
+# actual move rather than a generic prompt. Deterministic: same brief -> same query -> same
+# sources, so the "consulted" list shown to the user matches what the drafter actually saw.
+def _move_query(brief: MoveBrief) -> str | None:
     if brief.outcome == "ESCALATE":
-        return []  # no message move to advise on
+        return None  # no message move to advise on
     moved = " ".join(m.name.replace("_", " ") for m in brief.moved_terms)
     held = " ".join(h.name.replace("_", " ") for h in brief.held_terms)
-    query = f"{brief.pressure} negotiation concede {moved} hold {held}".strip()
-    # Blend general strategy (Fisher-Ury) with any move-specific lever ideas.
-    strategy = advice_lines(query, tag="negotiation-strategy", top_k=2)
-    levers = advice_lines(query, top_k=2)
-    # de-dup by source line, preserve order (strategy first)
+    return f"{brief.pressure} negotiation concede {moved} hold {held}".strip()
+
+
+def _retrieve_hits(brief: MoveBrief) -> list[Hit]:
+    """The knowledge chunks retrieved for this move (strategy + levers, deduped by source)."""
+    query = _move_query(brief)
+    if query is None:
+        return []
+    hits = [*retrieve(query, tag="negotiation-strategy", top_k=2), *retrieve(query, top_k=2)]
     seen: set[str] = set()
-    out: list[str] = []
-    for line in [*strategy, *levers]:
-        if line not in seen:
-            seen.add(line)
-            out.append(line)
+    out: list[Hit] = []
+    for hit in hits:
+        if hit.source not in seen:
+            seen.add(hit.source)
+            out.append(hit)
     return out[:3]
+
+
+def _advice_line(hit: Hit) -> str:
+    """A retrieved chunk as a bounded, source-attributed advice line for the drafter."""
+    text = hit.text.strip().replace("\n", " ")
+    if len(text) > _MAX_ADVICE_CHARS:
+        text = text[:_MAX_ADVICE_CHARS].rstrip() + "…"
+    return f"[{hit.source}] {text}"
+
+
+def _retrieve_advice(brief: MoveBrief) -> list[str]:
+    """Retrieve negotiation guidance for this move. Always safe: [] if the index is absent."""
+    return [_advice_line(h) for h in _retrieve_hits(brief)]
+
+
+def _consulted_label(source: str) -> str:
+    """A human title for a consulted source — the filename, de-slugged, sans extension."""
+    stem = source.rsplit("/", 1)[-1].rsplit(".", 1)[0]
+    return stem.replace("-", " ").replace("_", " ").strip()
+
+
+def consulted_sources(brief: MoveBrief) -> list[ConsultedSource]:
+    """The KB sources the agent consulted for this move — shown in the reasoning drawer.
+
+    Recomputed from the brief (deterministic, same query as the drafter saw) so the UI list
+    matches what actually shaped the message. Empty if the index is absent."""
+    return [
+        ConsultedSource(source=h.source, tag=h.tag, label=_consulted_label(h.source))
+        for h in _retrieve_hits(brief)
+    ]
 
 
 def draft_and_guard(
@@ -185,6 +225,7 @@ def turn_result(
         guard=guard,
         bar_fills=bar_fills,
         internal=internal,
+        consulted=consulted_sources(brief),
     )
 
 

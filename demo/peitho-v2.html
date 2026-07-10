@@ -248,6 +248,15 @@
     color:var(--buyer);padding:2px 8px;border-radius:5px;}
   .chiplbl{font-family:var(--mono);font-size:10.5px;color:var(--ink-3);}
 
+  /* consulted knowledge base — the KB made visible, like give/get */
+  .kbchips{display:flex;flex-wrap:wrap;gap:6px;align-items:center;}
+  .kbchip{display:inline-flex;align-items:center;gap:5px;font-size:11px;padding:3px 9px;border-radius:6px;
+    background:color-mix(in srgb,var(--accent,#7c5cff) 10%,transparent);
+    color:color-mix(in srgb,var(--accent,#7c5cff) 78%,var(--ink));
+    border:1px solid color-mix(in srgb,var(--accent,#7c5cff) 26%,transparent);}
+  .kbchip svg{opacity:.8;}
+  .kbnote{font-size:11px;color:var(--ink-3);margin-top:7px;line-height:1.45;}
+
   /* give/get — the collaborative trade, visible on the counter itself */
   .giveget{margin:9px 0 2px 23px;display:flex;flex-wrap:wrap;gap:7px;align-items:center;}
   .gg{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;padding:3px 10px;border-radius:7px;
@@ -327,6 +336,7 @@
   <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></symbol>
   <symbol id="i-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></symbol>
   <symbol id="i-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-book" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/></symbol>
 </defs></svg>
 
 <header>
@@ -904,11 +914,17 @@ function reasonDrawer(turn){
   const tradeSec = brief ? `<div class="dsec"><div class="lab">trade narrative</div>
     <div class="trade">${esc(briefSentence(brief))}</div>${bars}${chips}</div>` : "";
 
+  const consulted = turn.consulted || [];
+  const consultedSec = consulted.length ? `<div class="dsec"><div class="lab">consulted knowledge base</div>
+    <div class="kbchips">${consulted.map(c=>`<span class="kbchip" title="${esc(c.tag)} · shaped framing only — not a source of figures">
+      <svg width="11" height="11"><use href="#i-book"/></svg> ${esc(c.label)}</span>`).join("")}</div>
+    <div class="kbnote">Real procurement knowledge + the Fisher-Ury framework shaped the framing. The guard still limits the figures.</div></div>` : "";
+
   const guardSec = `<div class="dsec"><div class="lab">the numeric guard</div>${guardBlock(turn.guard)}</div>`;
 
   return `<details class="drawer"${(turn.guard&&turn.guard.attempts&&turn.guard.attempts.length>1)?" open":""}>
     <summary><svg class="chev" width="13" height="13"><use href="#i-chev"/></svg> Why this move — and how the guard held it</summary>
-    <div class="content">${decisionSec}${tradeSec}${guardSec}</div></details>`;
+    <div class="content">${decisionSec}${tradeSec}${consultedSec}${guardSec}</div></details>`;
 }
 
 function briefSentence(b){

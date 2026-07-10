@@ -143,6 +143,33 @@ def test_resolve_supplier_offer_returns_none_when_unparseable():
     assert resolve_supplier_offer(env, "Hello, how are you?", None) is None
 
 
+def test_consulted_sources_populated_for_a_counter():
+    # a real trade brief pulls KB sources from the shipped index (present in the repo)
+    from negotiation_agent.brief import HeldTerm, MovedTerm
+    from negotiation_agent.negotiate import consulted_sources
+
+    brief = MoveBrief(
+        outcome="COUNTER", is_opening=False, round_band="mid", pressure="reciprocity",
+        approved_numbers={"price": 96.0}, reason_tag="counter",
+        moved_terms=[MovedTerm(name="payment_days", from_display="30 days",
+                               to_display="45 days", direction_word="longer", role="concession")],
+        held_terms=[HeldTerm(name="price", display="EUR 96")],
+    )
+    sources = consulted_sources(brief)
+    assert sources  # the shipped index returns matches for a payment/price trade
+    assert all(s.source and s.label for s in sources)
+
+
+def test_consulted_sources_empty_on_escalate():
+    from negotiation_agent.negotiate import consulted_sources
+
+    brief = MoveBrief(
+        outcome="ESCALATE", is_opening=False, round_band="late", pressure="handoff",
+        approved_numbers={}, reason_tag="escalate",
+    )
+    assert consulted_sources(brief) == []
+
+
 def test_resolve_supplier_offer_inherits_standing_offer():
     env = _env()
     prev = Offer(terms={"price": 100.0, "payment_days": 30.0, "contract_months": 24.0})

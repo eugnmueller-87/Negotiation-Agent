@@ -168,6 +168,19 @@ class InternalState(BaseModel):
     convergence: list[dict[str, float]] = Field(default_factory=list)
 
 
+class ConsultedSource(BaseModel):
+    """One knowledge-base passage the agent consulted this turn — shown, not secret.
+
+    Carries the source + tag + a short label, never internal figures; it makes the KB
+    legible the way give/get makes the trade legible."""
+
+    model_config = {"frozen": True}
+
+    source: str  # the manifest-relative path (e.g. "docs/kb/batna-and-reservation-value.md")
+    tag: str
+    label: str  # a human title derived from the source
+
+
 class TurnResult(BaseModel):
     """The decision echo for one buyer turn. ``internal`` is god-view-gated."""
 
@@ -183,6 +196,7 @@ class TurnResult(BaseModel):
     guard: GuardAudit | None = None
     bar_fills: dict[str, float] = Field(default_factory=dict)
     internal: InternalState | None = None
+    consulted: list[ConsultedSource] = Field(default_factory=list)
 
 
 class TranscriptView(BaseModel):
