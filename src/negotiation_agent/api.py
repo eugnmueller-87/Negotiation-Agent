@@ -195,15 +195,99 @@ def reshape(req: ReshapeRequest) -> JSONResponse:
     except MandateConflict as e:
         return JSONResponse(
             status_code=409,
-            content={"error": {"code": "mandate_conflict", "message": str(e),
-                               "rule_ids": e.rule_ids}},
+            content={
+                "error": {"code": "mandate_conflict", "message": str(e), "rule_ids": e.rule_ids}
+            },
         )
-    return JSONResponse(content={
-        "shaped_envelope": shaped.model_dump(mode="json"),
-        "supplier_appetite": appetite,
-        "accepted_gates": [a.model_dump(mode="json") for a in accepted
-                           if a.delta.kind == "add_gate"],
-    })
+    return JSONResponse(
+        content={
+            "shaped_envelope": shaped.model_dump(mode="json"),
+            "supplier_appetite": appetite,
+            "accepted_gates": [
+                a.model_dump(mode="json") for a in accepted if a.delta.kind == "add_gate"
+            ],
+        }
+    )
+
+
+class TerminateRequest(BaseModel):
+    contract_text: str
+    buyer_name: str = "[Buyer]"
+    contract_reference: str | None = None
+    intent: str = "non_renewal"  # "non_renewal" | "terminate"
+    # Notice periods the regex extractor can't yet reach — human-supplied, optional.
+    # Fields the extractor DID find (expiry) always win; these fill the gap only.
+    termination_notice_days: int | None = None
+    renewal_notice_days: int | None = None
+    auto_renews: bool | None = None
+
+
+@app.post("/terminate", response_model=None)
+def terminate(req: TerminateRequest) -> JSONResponse:
+    """Compute the termination notice clock from a contract and draft the notice.
+
+    Pure and offline: regex Zone-B extraction → deterministic date math → a templated
+    notice grounded only in the contract's own terms. No LLM, no legal ruling — the
+    draft carries a mandatory "verify against local law" line. Human-supplied notice
+    periods fill gaps the extractor can't reach; extracted facts always win.
+    """
+    import datetime as _dt
+
+    from negotiation_agent.intelligence import DocumentGrounded, extract_intelligence
+    from negotiation_agent.termination import compute_clock, draft_termination_notice
+
+    if req.intent not in ("non_renewal", "terminate"):
+        return _err("bad_intent", "intent must be 'non_renewal' or 'terminate'", 400)
+
+    intel = extract_intelligence(req.contract_text)
+    lifecycle = intel.lifecycle
+
+    # Merge human-supplied notice terms the extractor couldn't reach. An extracted value
+    # (e.g. expiry) is never overwritten; only a None field is filled.
+    def _grounded(
+        value: object | None, existing: DocumentGrounded | None
+    ) -> DocumentGrounded | None:
+        if existing is not None:
+            return existing  # the contract's own value wins
+        if value is None:
+            return None
+        return DocumentGrounded(value=str(value).lower(), source="regex", assurance="probable")
+
+    if lifecycle is not None or any(
+        v is not None
+        for v in (req.termination_notice_days, req.renewal_notice_days, req.auto_renews)
+    ):
+        from negotiation_agent.intelligence import ContractLifecycle
+
+        base = lifecycle or ContractLifecycle()
+        lifecycle = ContractLifecycle(
+            effective_date=base.effective_date,
+            expiration_date=base.expiration_date,
+            initial_term_months=base.initial_term_months,
+            auto_renews=_grounded(req.auto_renews, base.auto_renews),
+            renewal_notice_days=_grounded(req.renewal_notice_days, base.renewal_notice_days),
+            termination_notice_days=_grounded(
+                req.termination_notice_days, base.termination_notice_days
+            ),
+        )
+
+    today = _dt.date.today()
+    clock = compute_clock(lifecycle, intel.legal, today=today)
+    notice = draft_termination_notice(
+        clock,
+        supplier_name=intel.supplier_name,
+        buyer_name=req.buyer_name,
+        contract_reference=req.contract_reference,
+        today=today,
+        intent=req.intent,  # type: ignore[arg-type]  # validated above
+    )
+    return JSONResponse(
+        content={
+            "clock": clock.model_dump(mode="json"),
+            "notice_draft": notice,
+            "supplier_name": intel.supplier_name,
+        }
+    )
 
 
 def _supplier_from_text(text: str) -> str:
