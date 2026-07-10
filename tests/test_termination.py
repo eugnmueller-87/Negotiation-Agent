@@ -190,3 +190,15 @@ def test_non_renewal_and_terminate_intents_differ():
     assert "Non-Renewal" in nr
     assert "Termination" in tm
     assert nr != tm
+
+
+def test_missed_window_draft_does_not_claim_timeliness():
+    # A false "served within the notice period" line in a legal notice would be a lie —
+    # a missed deadline must warn, never assert timeliness.
+    clock = compute_clock(
+        _life(expiration_date="2026-07-15", termination_notice_days=30), today=TODAY
+    )
+    assert clock.window_status == "MISSED"
+    notice = draft_termination_notice(clock, supplier_name="X", buyer_name="Y", today=TODAY)
+    assert "served within" not in notice
+    assert "has passed" in notice

@@ -250,10 +250,20 @@ def draft_termination_notice(
     ]
 
     if clock.notice_period_days is not None and clock.notice_deadline is not None:
-        lines.append(
-            f"\nThis notice is served within the {clock.notice_period_days}-day notice "
-            f"period the agreement requires (notice deadline {clock.notice_deadline.isoformat()})."
-        )
+        if clock.window_status == "MISSED":
+            # Never claim the notice is timely when the deadline has passed — that would
+            # put a false statement in a legal notice. State the miss plainly instead.
+            lines.append(
+                f"\nNote: the {clock.notice_period_days}-day notice deadline "
+                f"({clock.notice_deadline.isoformat()}) has passed. This notice may be "
+                "late under the agreement — confirm the effect with counsel before serving."
+            )
+        else:
+            lines.append(
+                f"\nThis notice is served within the {clock.notice_period_days}-day notice "
+                f"period the agreement requires (notice deadline "
+                f"{clock.notice_deadline.isoformat()})."
+            )
 
     if clock.governing_law:
         lines.append(
