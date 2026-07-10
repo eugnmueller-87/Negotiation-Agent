@@ -20,12 +20,13 @@ The rule engine (``propose_adjustments``) is a pure function: findings in, a lis
 from __future__ import annotations
 
 import datetime as _dt
+import re
 from typing import Literal
 
 from pydantic import BaseModel, Field
 
 from negotiation_agent.envelope import Direction, TermType
-from negotiation_agent.intake import ContractExtraction
+from negotiation_agent.intake import ContractExtraction, extract_contract
 from negotiation_agent.research import SupplierBrief
 from negotiation_agent.shaper import (
     W_GIVE,
@@ -298,3 +299,95 @@ def propose_adjustments(
         )
 
     return adjustments, blocked, block_reason
+
+
+# ── regex Zone-B extractor — the deterministic path (the LLM extractor is v1-later) ──
+# Real figures are short; bounded patterns keep this linear on hostile input.
+_EXPIRY_RE = re.compile(
+    r"(?:expir\w+|terminat\w+|end\w*|valid until|through)\D{0,20}"
+    r"(\d{4}-\d{2}-\d{2}|\d{1,2}[./]\d{1,2}[./]\d{4})",
+    re.I,
+)
+_DPA_POS_RE = re.compile(r"data[\s-]?processing agreement|\bDPA\b|Art(?:icle)?\.?\s*28", re.I)
+_NDA_POS_RE = re.compile(r"non[\s-]?disclosure|confidentiality agreement|\bNDA\b", re.I)
+_UOM_RE = re.compile(
+    r"\bper\s+(unit|seat|user|licen[cs]e|month|year|1?,?000 tokens|kg|piece|hour)\b", re.I
+)
+
+
+def extract_intelligence(text: str) -> ContractIntelligence:
+    """Deterministic (regex-only) contract intelligence — works offline, no LLM.
+
+    Populates Zone A via the existing extractor and the Zone-B fields regex can reach
+    (expiration date, NDA/DPA presence, units of measure). Fields it can't determine
+    stay ``None`` — so the rule engine simply doesn't fire on them, per the design's
+    graceful-degradation rule. The LLM extractor (v1-later) fills the rest behind the
+    same ``ContractExtraction`` Protocol.
+    """
+    extraction = extract_contract(text)
+    warnings = list(extraction.warnings)
+
+    lifecycle: ContractLifecycle | None = None
+    m = _EXPIRY_RE.search(text)
+    if m:
+        raw = m.group(1).replace("/", ".") if "/" in m.group(1) else m.group(1)
+        # regex date match is a confirmed document fact (verbatim span present)
+        lifecycle = ContractLifecycle(
+            expiration_date=DocumentGrounded(
+                value=raw, quote=m.group(0).strip(), source="regex", confidence=0.9,
+                assurance="confirmed",
+            )
+        )
+
+    # NDA/DPA: regex can confirm PRESENCE (positive match). It cannot confirm ABSENCE —
+    # a missing keyword might mean the clause is worded differently. So a non-match is
+    # left None (unknown), never a confirmed False. Only the LLM extractor asserts False.
+    legal = LegalFlags(
+        has_dpa=DocumentGrounded(value="true", quote="", source="regex", assurance="confirmed")
+        if _DPA_POS_RE.search(text) else None,
+        has_nda=DocumentGrounded(value="true", quote="", source="regex", assurance="confirmed")
+        if _NDA_POS_RE.search(text) else None,
+    )
+
+    uoms = sorted({u.lower() for u in _UOM_RE.findall(text)})
+
+    return ContractIntelligence(
+        extraction=extraction, lifecycle=lifecycle,
+        legal=legal if (legal.has_dpa or legal.has_nda) else None,
+        units_of_measure=uoms, extractor_used="regex", warnings=warnings,
+    )
+
+
+class IntelligenceResult(BaseModel):
+    """Everything the /intel endpoint returns: the picture, the brief, the proposed
+    adjustments, and whether the supplier is blocked. Framework-free."""
+
+    model_config = {"frozen": True}
+
+    intelligence: ContractIntelligence
+    brief: SupplierBrief | None = None
+    adjustments: list[ProposedAdjustment] = Field(default_factory=list)
+    blocked: bool = False
+    block_reason: str | None = None
+    research_note: str | None = None
+
+
+def prepare_intelligence(
+    contract_text: str,
+    brief: SupplierBrief | None,
+    *,
+    today: _dt.date,
+    research_note: str | None = None,
+) -> IntelligenceResult:
+    """Compose extraction + supplier brief into the full intelligence result. Pure.
+
+    ``brief`` is passed in (fetched by the caller's ``HadesClient`` server-side) so this
+    stays testable and framework-free. The rule engine turns findings into proposed
+    adjustments the human reviews before signing.
+    """
+    intel = extract_intelligence(contract_text)
+    adjustments, blocked, reason = propose_adjustments(intel, brief, today=today)
+    return IntelligenceResult(
+        intelligence=intel, brief=brief, adjustments=adjustments,
+        blocked=blocked, block_reason=reason, research_note=research_note,
+    )

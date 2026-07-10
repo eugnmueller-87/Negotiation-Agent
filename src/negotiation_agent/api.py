@@ -46,7 +46,7 @@ from negotiation_agent.negotiate import (
     turn_result,
 )
 from negotiation_agent.prepare import PreparedNegotiation, prepare_negotiation
-from negotiation_agent.research import HadesClient
+from negotiation_agent.research import HadesClient, ResearchUnavailable
 from negotiation_agent.signing import MandateError, sign_mandate, verify_mandate
 from negotiation_agent.wire import (
     ApiError,
@@ -131,6 +131,86 @@ def demo() -> FileResponse | JSONResponse:
 def prepare(req: PrepareRequest) -> PreparedNegotiation:
     """Extract the opening position from a contract and brief the supplier."""
     return prepare_negotiation(req.contract_text, researcher=HadesClient(), research=req.research)
+
+
+class IntelRequest(BaseModel):
+    contract_text: str
+    research: bool = True
+
+
+@app.post("/intel", response_model=None)
+def intel(req: IntelRequest) -> JSONResponse:
+    """Deep-extract a contract, research the supplier, and propose mandate adjustments.
+
+    The expensive, once-per-upload call: regex extraction (Zone A + B) + Hades brief +
+    the deterministic rule engine. Returns the intelligence picture, the brief, and the
+    proposed (human-reviewable) adjustments. Never shapes silently — the human approves.
+    """
+    import datetime as _dt
+
+    from negotiation_agent.intelligence import prepare_intelligence
+
+    brief = None
+    note = None
+    if req.research:
+        try:
+            brief = HadesClient().investigate(_supplier_from_text(req.contract_text))
+        except ResearchUnavailable as e:
+            note = str(e)
+    result = prepare_intelligence(
+        req.contract_text, brief, today=_dt.date.today(), research_note=note
+    )
+    return JSONResponse(content=result.model_dump(mode="json"))
+
+
+class ReshapeRequest(BaseModel):
+    base_envelope: dict[str, object]  # a serialized Envelope
+    adjustments: list[dict[str, object]]  # serialized ProposedAdjustment[]
+    accepted_rule_ids: list[str]
+    supplier_appetite: dict[str, float] = {}
+
+
+@app.post("/reshape", response_model=None)
+def reshape(req: ReshapeRequest) -> JSONResponse:
+    """Apply the accepted adjustments to a base envelope and return the shaped mandate.
+
+    The cheap, pure call every toggle hits — no LLM, no Hades, just the deterministic
+    ``apply_adjustments``. Returns the re-validated shaped envelope + appetite, or a
+    409 conflict naming the offending rules (never silently drops one).
+    """
+    from negotiation_agent.envelope import Envelope
+    from negotiation_agent.shaper import MandateConflict, ProposedAdjustment, apply_adjustments
+
+    try:
+        base = Envelope.model_validate(req.base_envelope)
+        all_adj = [ProposedAdjustment.model_validate(a) for a in req.adjustments]
+    except (ValueError, KeyError) as e:
+        return _err("bad_reshape_input", f"invalid base or adjustments: {e}", 400)
+
+    accepted = [a for a in all_adj if a.rule_id in set(req.accepted_rule_ids)]
+    # gates don't touch the envelope; only envelope-affecting deltas go to the applier
+    envelope_adj = [a for a in accepted if a.delta.kind != "add_gate"]
+    try:
+        shaped, appetite = apply_adjustments(base, envelope_adj, req.supplier_appetite)
+    except MandateConflict as e:
+        return JSONResponse(
+            status_code=409,
+            content={"error": {"code": "mandate_conflict", "message": str(e),
+                               "rule_ids": e.rule_ids}},
+        )
+    return JSONResponse(content={
+        "shaped_envelope": shaped.model_dump(mode="json"),
+        "supplier_appetite": appetite,
+        "accepted_gates": [a.model_dump(mode="json") for a in accepted
+                           if a.delta.kind == "add_gate"],
+    })
+
+
+def _supplier_from_text(text: str) -> str:
+    """Best-effort supplier name for the Hades lookup (regex; falls back to a label)."""
+    from negotiation_agent.intake import extract_contract
+
+    return extract_contract(text).supplier_name or "unknown supplier"
 
 
 @app.post("/negotiate/open")
