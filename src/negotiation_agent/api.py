@@ -429,13 +429,16 @@ def negotiate_step(req: StepRequest, request: Request) -> JSONResponse:
 
 @app.get("/health")
 def health() -> dict[str, object]:
+    from negotiation_agent.knowledge.retrieve import _load_index
     from negotiation_agent.llm import BUYER_MODEL, SUPPLIER_MODEL
 
+    kb = _load_index()
     return {
         "status": "ok",
         "buyer_model": BUYER_MODEL,
         "supplier_model": SUPPLIER_MODEL,
         "mandate_configured": bool(os.getenv("PEITHO_MANDATE_SECRET")),
+        "knowledge_chunks": kb.n_docs if kb is not None else 0,
     }
 
 
