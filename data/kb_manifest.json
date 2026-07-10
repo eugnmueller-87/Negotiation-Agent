@@ -1,0 +1,687 @@
+{
+  "version": 1,
+  "description": "Fail-closed allowlist for the Peitho procurement knowledge base. The ingest reads ONLY paths listed in include[]; anything else is skipped. exclude_globs is a defense-in-depth second gate — a path is rejected if it is not on the allowlist OR it matches an exclude glob. Curated from the AI Brain vault by a multi-agent inventory (2026-07-10); the vault itself is NOT in this repo. Harvard/Fisher-Ury notes are authored in this repo (docs/kb/) and listed under repo_include.",
+  "vault_root_env": "PEITHO_VAULT_ROOT",
+  "vault_include": [
+    {
+      "path": "Skills/Negotiation Prep.md",
+      "tag": "playbook",
+      "scrub_personal": false
+    },
+    {
+      "path": "Skills/Category Strategy.md",
+      "tag": "negotiation-strategy",
+      "scrub_personal": false
+    },
+    {
+      "path": "Skills/Quote Comparison.md",
+      "tag": "pricing",
+      "scrub_personal": false
+    },
+    {
+      "path": "Notes/it-category-strategy-framework.md",
+      "tag": "negotiation-strategy",
+      "scrub_personal": false
+    },
+    {
+      "path": "Notes/savings-measurement-framework.md",
+      "tag": "pricing",
+      "scrub_personal": false
+    },
+    {
+      "path": "Notes/procurement-policy-module-library.md",
+      "tag": "contract-terms",
+      "scrub_personal": true
+    },
+    {
+      "path": "Notes/procurement-policy-template.md",
+      "tag": "contract-terms",
+      "scrub_personal": false
+    },
+    {
+      "path": "Notes/supplier-negotiation-track-record.md",
+      "tag": "supplier-profile",
+      "scrub_personal": true
+    },
+    {
+      "path": "Notes/manual-procurement-to-ai-upgrade-map.md",
+      "tag": "negotiation-strategy",
+      "scrub_personal": false
+    },
+    {
+      "path": "Notes/Frameworks/responsible-ai-procurement-governance-is-the-noosphr-moat.md",
+      "tag": "compliance",
+      "scrub_personal": false
+    },
+    {
+      "path": "Notes/Frameworks/dynamic-capabilities-is-the-spine-of-procurement-transformation.md",
+      "tag": "negotiation-strategy",
+      "scrub_personal": false
+    },
+    {
+      "path": "Notes/Frameworks/citable-stats-for-the-ai-in-procurement-pitch.md",
+      "tag": "category-benchmark",
+      "scrub_personal": false
+    },
+    {
+      "path": "MOCs/AI in Procurement MOC.md",
+      "tag": "other",
+      "scrub_personal": false
+    },
+    {
+      "path": "wiki/best-practices/ai-in-procurement.md",
+      "tag": "category-benchmark",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2026-01-12__quick-wins-in-negotiation.md",
+      "tag": "playbook",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2025-11-21__pricing-strategy-for-surveillance.md",
+      "tag": "playbook",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/undated__hyperscaler-multi-year-contract-discounts.md",
+      "tag": "category-benchmark",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/undated__atlassian-renewal-strategy.md",
+      "tag": "category-benchmark",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2026-01-07__angebotsvergleich-und-einsparungen.md",
+      "tag": "pricing",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2026-01-14__verhandlungsstrategie-lastenheft.md",
+      "tag": "negotiation-strategy",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/undated__indirect-procurement-process-policy.md",
+      "tag": "playbook",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2024-06-06__supplier-portfolio-strategy.md",
+      "tag": "negotiation-strategy",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2023-12-12__srm-workshop-setup-image.md",
+      "tag": "negotiation-strategy",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2025-11-11__billing-dispute-resolution.md",
+      "tag": "playbook",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2026-01-07__vertrags-bersicht-und-gap-analyse.md",
+      "tag": "pricing",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2025-11-24__savings-kpi-excel-report.md",
+      "tag": "pricing",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2025-11-04__contract-management-tool-requirements.md",
+      "tag": "contract-terms",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/undated__monotype-lizenzvereinbarung-zusammenfassung.md",
+      "tag": "contract-terms",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/undated__projekt-microsoft-services-ausschreibung.md",
+      "tag": "playbook",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/undated__comparable-suppliers-to-agileengine.md",
+      "tag": "playbook",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/undated__supplier-process-compliance.md",
+      "tag": "compliance",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/github-wikis/PROCUREMENT/Workflows.md",
+      "tag": "other",
+      "scrub_personal": false
+    },
+    {
+      "path": "Companies/Pactum AI.md",
+      "tag": "supplier-profile",
+      "scrub_personal": true
+    },
+    {
+      "path": "Companies/OneTrust.md",
+      "tag": "supplier-profile",
+      "scrub_personal": true
+    },
+    {
+      "path": "Companies/JAGGAER.md",
+      "tag": "supplier-profile",
+      "scrub_personal": true
+    },
+    {
+      "path": "Companies/Coupa.md",
+      "tag": "supplier-profile",
+      "scrub_personal": true
+    },
+    {
+      "path": "Companies/Zip.md",
+      "tag": "supplier-profile",
+      "scrub_personal": true
+    },
+    {
+      "path": "Companies/Mercanis.md",
+      "tag": "supplier-profile",
+      "scrub_personal": true
+    },
+    {
+      "path": "Companies/akirolabs.md",
+      "tag": "supplier-profile",
+      "scrub_personal": true
+    },
+    {
+      "path": "Companies/Omnea.md",
+      "tag": "supplier-profile",
+      "scrub_personal": true
+    },
+    {
+      "path": "Companies/Sastrify.md",
+      "tag": "supplier-profile",
+      "scrub_personal": true
+    },
+    {
+      "path": "Companies/Savify.md",
+      "tag": "supplier-profile",
+      "scrub_personal": true
+    },
+    {
+      "path": "Companies/SAP.md",
+      "tag": "supplier-profile",
+      "scrub_personal": true
+    },
+    {
+      "path": "Companies/Atlassian.md",
+      "tag": "supplier-profile",
+      "scrub_personal": true
+    },
+    {
+      "path": "Companies/ZoomInfo.md",
+      "tag": "supplier-profile",
+      "scrub_personal": true
+    },
+    {
+      "path": "Companies/DocuSign.md",
+      "tag": "supplier-profile",
+      "scrub_personal": true
+    },
+    {
+      "path": "Companies/Cvent.md",
+      "tag": "supplier-profile",
+      "scrub_personal": true
+    },
+    {
+      "path": "Companies/ADP.md",
+      "tag": "supplier-profile",
+      "scrub_personal": true
+    },
+    {
+      "path": "Companies/1E.md",
+      "tag": "supplier-profile",
+      "scrub_personal": true
+    },
+    {
+      "path": "Companies/AlphaSense.md",
+      "tag": "supplier-profile",
+      "scrub_personal": true
+    },
+    {
+      "path": "Companies/Equatex.md",
+      "tag": "supplier-profile",
+      "scrub_personal": true
+    },
+    {
+      "path": "Companies/IONOS.md",
+      "tag": "supplier-profile",
+      "scrub_personal": true
+    },
+    {
+      "path": "Companies/Solaris SE.md",
+      "tag": "supplier-profile",
+      "scrub_personal": true
+    },
+    {
+      "path": "Companies/Qodo.md",
+      "tag": "supplier-profile",
+      "scrub_personal": true
+    },
+    {
+      "path": "Companies/Statista.md",
+      "tag": "supplier-profile",
+      "scrub_personal": true
+    },
+    {
+      "path": "Companies/Deloitte.md",
+      "tag": "supplier-profile",
+      "scrub_personal": true
+    },
+    {
+      "path": "Companies/PwC.md",
+      "tag": "supplier-profile",
+      "scrub_personal": true
+    },
+    {
+      "path": "Companies/BCG.md",
+      "tag": "supplier-profile",
+      "scrub_personal": true
+    },
+    {
+      "path": "Companies/KPMG.md",
+      "tag": "supplier-profile",
+      "scrub_personal": true
+    },
+    {
+      "path": "Companies/Capgemini.md",
+      "tag": "supplier-profile",
+      "scrub_personal": true
+    },
+    {
+      "path": "Companies/ThoughtSpot.md",
+      "tag": "supplier-profile",
+      "scrub_personal": true
+    },
+    {
+      "path": "raw/github-wikis/supplier-dd-agent/Home.md",
+      "tag": "supplier-profile",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2024-06-06__pricing-negotiation-request.md",
+      "tag": "negotiation-strategy",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2025-05-20__price-justification-and-negotiation.md",
+      "tag": "negotiation-strategy",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2025-08-22__negotiation-storage-costs.md",
+      "tag": "negotiation-strategy",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2024-03-12__unity-licensing-negotiation-approach.md",
+      "tag": "negotiation-strategy",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2025-06-03__onetrust-pricing-negotiation.md",
+      "tag": "negotiation-strategy",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/undated__category-management-steps.md",
+      "tag": "playbook",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/undated__category-strategy-leadership-summary.md",
+      "tag": "category-benchmark",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2026-01-20__category-management-dashboards.md",
+      "tag": "category-benchmark",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2025-07-07__spend-category-consolidation.md",
+      "tag": "category-benchmark",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2024-01-18__create-spend-analysis-table.md",
+      "tag": "category-benchmark",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2025-01-06__spend-analysis-feedback.md",
+      "tag": "category-benchmark",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2024-08-12__efficient-supplier-landscape-strategy.md",
+      "tag": "category-benchmark",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2025-07-07__supplier-comparison-framework.md",
+      "tag": "supplier-profile",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2024-09-04__key-pillars-of-supplier-relationship-management-sr.md",
+      "tag": "playbook",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2024-06-12__indirect-procurement-rating-template.md",
+      "tag": "supplier-profile",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2024-11-25__supplier-management-procurement-policy.md",
+      "tag": "compliance",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2024-11-04__procurement-policy-enhancement-suggestions.md",
+      "tag": "compliance",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/undated__rewrite-policy-request.md",
+      "tag": "compliance",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2024-08-13__esg-risk-mitigation-strategies.md",
+      "tag": "compliance",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2025-08-01__isae-3402-vs-soc-2.md",
+      "tag": "compliance",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/github-wikis/final-project-eugen/Compliance.md",
+      "tag": "compliance",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2024-01-02__contract-details-and-commitments.md",
+      "tag": "contract-terms",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2025-08-26__contract-weaknesses-analysis.md",
+      "tag": "contract-terms",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2025-09-22__procurement-contract-templates.md",
+      "tag": "contract-terms",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2026-01-14__clause-refinement-feedback.md",
+      "tag": "contract-terms",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2026-01-27__pme-vertragsk-ndigungsfrist.md",
+      "tag": "contract-terms",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2025-02-11__linkedin-contract-termination-request.md",
+      "tag": "contract-terms",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2024-06-07__latest-sce-contract-request.md",
+      "tag": "contract-terms",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2025-06-26__corporate-mobile-contract-transition.md",
+      "tag": "contract-terms",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2024-09-03__zoominfo-vertrag-anfrage.md",
+      "tag": "contract-terms",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2024-04-21__optimize-procurement-strategies.md",
+      "tag": "playbook",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2024-07-31__strategic-indirect-procurement-summary.md",
+      "tag": "playbook",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2025-06-23__strategic-indirect-procurement-tools.md",
+      "tag": "playbook",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2024-07-12__blind-spot-in-procurement.md",
+      "tag": "playbook",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2025-06-25__procurement-roadmap-2025.md",
+      "tag": "playbook",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2025-06-04__einkaufsstrategie-p2p-ai-tools.md",
+      "tag": "playbook",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2024-01-25__ibm-procurement-strategy-success.md",
+      "tag": "playbook",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/undated__procurement-value-office-strategy.md",
+      "tag": "playbook",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2025-02-11__procurement-analytics-rfp-invitation.md",
+      "tag": "pricing",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/undated__rfp-benchmarking-and-agency-plan.md",
+      "tag": "pricing",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2024-06-24__adjust-pricing-deadline-wednesday.md",
+      "tag": "pricing",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2025-08-20__sharepoint-storage-pricing.md",
+      "tag": "pricing",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2024-06-25__18-increase-from-136800.md",
+      "tag": "pricing",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2025-01-15__einsparungen-3-jahres-angebot.md",
+      "tag": "pricing",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2025-09-19__renewal-angebot-vergleich.md",
+      "tag": "pricing",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2024-07-01__atlassian-license-summary.md",
+      "tag": "pricing",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2024-06-19__atlassian-licensing-table.md",
+      "tag": "pricing",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2024-03-13__vergleich-der-support-preise.md",
+      "tag": "pricing",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2025-02-04__1e-contract-and-pricing.md",
+      "tag": "pricing",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2025-06-24__chatgpt-enterprise-agreement-anfrage.md",
+      "tag": "pricing",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2024-09-30__qualtrics-license-model-concerns.md",
+      "tag": "pricing",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2024-06-13__irfs-tool-sourcing-approval.md",
+      "tag": "pricing",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2025-06-30__cvent-l-sung-cfo-genehmigung.md",
+      "tag": "pricing",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2026-02-03__early-renewal-upsell-inquiry.md",
+      "tag": "pricing",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2026-02-03__qodo-proposal-email-draft.md",
+      "tag": "negotiation-strategy",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2025-09-30__approaching-phase-1-with-supplier.md",
+      "tag": "negotiation-strategy",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/undated__email-an-lieferanten-vorbereiten.md",
+      "tag": "negotiation-strategy",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/undated__vergleich-der-anbieter.md",
+      "tag": "supplier-profile",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2024-11-19__strategic-procurement-tools.md",
+      "tag": "playbook",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/openai/2024-09-01__p2p-system-impact-analysis.md",
+      "tag": "playbook",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/inputs/drive/thesis-literature-inventory.md",
+      "tag": "other",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/_nightshift/distill-candidates/2026-07-04__procurement-market-signals.md",
+      "tag": "category-benchmark",
+      "scrub_personal": false
+    },
+    {
+      "path": "raw/_nightshift/distill-candidates/2026-07-04__supply-chain-governance-pattern.md",
+      "tag": "compliance",
+      "scrub_personal": false
+    }
+  ],
+  "repo_include": [
+    {
+      "path": "docs/kb/batna-and-reservation-value.md",
+      "tag": "negotiation-strategy",
+      "scrub_personal": false
+    },
+    {
+      "path": "docs/kb/interests-not-positions.md",
+      "tag": "negotiation-strategy",
+      "scrub_personal": false
+    },
+    {
+      "path": "docs/kb/objective-criteria.md",
+      "tag": "negotiation-strategy",
+      "scrub_personal": false
+    },
+    {
+      "path": "docs/kb/options-for-mutual-gain.md",
+      "tag": "negotiation-strategy",
+      "scrub_personal": false
+    }
+  ],
+  "exclude_globs": [
+    "_private/**",
+    "**/*.confidential.md",
+    "People/**",
+    "Journals/**",
+    "Calls/**",
+    "episodes/**",
+    "predictions/**",
+    "Chess Moves/**",
+    "Reviews/**",
+    "Decisions/**",
+    "Milestones/**",
+    "memory/**",
+    "disputes/**",
+    "00 Inbox/**",
+    "reports/dreams/**",
+    "Goals.md",
+    "Notes/personal-life-admin-archive.md",
+    "raw/github-wikis/Lookout/**",
+    "raw/github-wikis/*/Setup-and-Deployment.md",
+    "raw/github-wikis/*/Architecture.md",
+    "raw/github-wikis/*/Design-Decisions.md",
+    "raw/github-wikis/*/Security-Model.md",
+    "raw/github-wikis/SCM-Master/**",
+    "raw/github-wikis/SCM-POWER-BI/**",
+    "raw/github-wikis/PROCUREMENT/Home.md",
+    "raw/github-wikis/PROCUREMENT/Data-Model.md",
+    "raw/github-wikis/supplier-dd-agent/Data-Model.md",
+    "raw/github-wikis/supplier-dd-agent/Setup-and-Deployment.md",
+    "raw/github-wikis/supplier-dd-agent/Design-Decisions.md",
+    "Projects/Job Hunt/**",
+    "outputs/**"
+  ]
+}

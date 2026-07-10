@@ -24,6 +24,7 @@ from negotiation_agent.envelope import Envelope, Offer
 from negotiation_agent.fallback import build_redraft_instruction, render_fallback
 from negotiation_agent.guard import check
 from negotiation_agent.intake import extract_contract
+from negotiation_agent.knowledge.retrieve import advice_lines
 from negotiation_agent.llm import DraftClient
 from negotiation_agent.supplier_model import SupplierModel
 from negotiation_agent.wire import (
@@ -75,6 +76,29 @@ def fold(
     return decision, state, prev_counter
 
 
+# The map from an engine move to a knowledge-base query. Pure — turns what the engine did
+# (which terms moved/held, the round pressure) into retrieval text, so the advice matches
+# the actual move rather than a generic prompt.
+def _retrieve_advice(brief: MoveBrief) -> list[str]:
+    """Retrieve negotiation guidance for this move. Always safe: [] if the index is absent."""
+    if brief.outcome == "ESCALATE":
+        return []  # no message move to advise on
+    moved = " ".join(m.name.replace("_", " ") for m in brief.moved_terms)
+    held = " ".join(h.name.replace("_", " ") for h in brief.held_terms)
+    query = f"{brief.pressure} negotiation concede {moved} hold {held}".strip()
+    # Blend general strategy (Fisher-Ury) with any move-specific lever ideas.
+    strategy = advice_lines(query, tag="negotiation-strategy", top_k=2)
+    levers = advice_lines(query, top_k=2)
+    # de-dup by source line, preserve order (strategy first)
+    seen: set[str] = set()
+    out: list[str] = []
+    for line in [*strategy, *levers]:
+        if line not in seen:
+            seen.add(line)
+            out.append(line)
+    return out[:3]
+
+
 def draft_and_guard(
     drafter: DraftClient,
     brief: MoveBrief,
@@ -89,8 +113,9 @@ def draft_and_guard(
     """
     attempts: list[GuardAttempt] = []
     work_thread = list(thread)
+    advice = _retrieve_advice(brief)
     for _ in range(_MAX_REDRAFTS + 1):
-        draft = drafter.draft_buyer(brief, work_thread)
+        draft = drafter.draft_buyer(brief, work_thread, advice)
         violations = check(draft, approved)
         attempts.append(GuardAttempt(draft=draft, ok=not violations, violations=violations))
         if not violations:

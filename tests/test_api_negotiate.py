@@ -59,7 +59,7 @@ MANDATE = {
 class _FakeDrafter:
     """Drafts using only the approved figures — always guard-clean."""
 
-    def draft_buyer(self, brief, thread):
+    def draft_buyer(self, brief, thread, advice=None):
         nums = " ".join(f"{v:g}" for v in brief.approved_numbers.values())
         return f"Our position: {nums}. Looking forward to working together."
 

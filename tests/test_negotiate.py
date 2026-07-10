@@ -42,7 +42,7 @@ def _engine(env):
 class _CleanDrafter:
     """Always drafts a message using only the approved figures."""
 
-    def draft_buyer(self, brief, thread):
+    def draft_buyer(self, brief, thread, advice=None):
         nums = " ".join(f"{v:g}" for v in brief.approved_numbers.values())
         return f"Our position: {nums}. Happy to work together."
 
@@ -56,7 +56,7 @@ class _CheatingDrafter:
     def __init__(self):
         self.calls = 0
 
-    def draft_buyer(self, brief, thread):
+    def draft_buyer(self, brief, thread, advice=None):
         self.calls += 1
         if self.calls <= 2:
             return "We'll pay €1.23 per unit."  # never approved
@@ -68,7 +68,7 @@ class _CheatingDrafter:
 
 
 class _AlwaysCheatingDrafter:
-    def draft_buyer(self, brief, thread):
+    def draft_buyer(self, brief, thread, advice=None):
         return "We'll pay €1.23 per unit."  # never approved, never complies
 
     def draft_supplier(self, persona, thread, company, category):
