@@ -96,6 +96,15 @@ class DealEngine:
         self.config = config or EngineConfig()
         self._priorities = supplier_model.priorities(envelope)
 
+    @property
+    def priorities(self) -> dict[str, float]:
+        """The supplier-appetite belief the logrolling search routes concessions by.
+
+        Exposed read-only so the move-brief builder can honesty-gate its rationale on
+        the belief (see ``brief.build_move_brief``) without reaching into internals.
+        """
+        return dict(self._priorities)
+
     # ---- Boulware schedule -------------------------------------------------
 
     def threshold(self, round_index: int) -> float:

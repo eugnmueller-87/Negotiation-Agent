@@ -1,0 +1,15 @@
+# Railway deploy config for the Peitho v2 negotiation backend.
+# Deploy: connect this repo in Railway, set the env vars (see docs/DEPLOY.md),
+# and Railway builds with Nixpacks and runs the start command below.
+
+[build]
+builder = "nixpacks"
+# Install the package with the [web] extra so FastAPI + uvicorn + anthropic are present.
+buildCommand = "pip install -e '.[web]'"
+
+[deploy]
+startCommand = "uvicorn negotiation_agent.api:app --host 0.0.0.0 --port $PORT"
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
