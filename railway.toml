@@ -4,13 +4,13 @@
 
 [build]
 builder = "nixpacks"
-# Install the package with the [web] extra so FastAPI + uvicorn + anthropic are
-# present. A non-editable install (no -e) — the deploy container doesn't need
-# editable mode, and -e conflicts with the Nixpacks build cache/mount.
-buildCommand = "pip install --upgrade pip && pip install '.[web]'"
+# Build is defined in nixpacks.toml: it installs runtime deps from
+# requirements-deploy.txt (no package build) to sidestep the src-layout wheel issue.
 
 [deploy]
-startCommand = "uvicorn negotiation_agent.api:app --host 0.0.0.0 --port $PORT"
+# Run uvicorn against src/ on PYTHONPATH — the package isn't installed in the
+# container, only its deps (see nixpacks.toml). Must match nixpacks.toml's start.
+startCommand = "PYTHONPATH=src uvicorn negotiation_agent.api:app --host 0.0.0.0 --port $PORT"
 healthcheckPath = "/health"
 healthcheckTimeout = 30
 restartPolicyType = "on_failure"

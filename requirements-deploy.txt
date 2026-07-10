@@ -1,0 +1,10 @@
+# Runtime dependencies for the deployed Peitho v2 backend (Railway).
+#
+# Deliberately separate from pyproject.toml's [web] extra: the deploy runs uvicorn
+# against src/ on PYTHONPATH (see nixpacks.toml start cmd) rather than installing
+# the package, which sidesteps the src-layout wheel-build that Nixpacks trips on.
+# Keep these versions in sync with the [web] extra in pyproject.toml.
+pydantic>=2.6,<3
+fastapi>=0.110
+uvicorn>=0.29
+anthropic>=0.40
