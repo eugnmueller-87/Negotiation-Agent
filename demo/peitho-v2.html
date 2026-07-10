@@ -248,6 +248,18 @@
     color:var(--buyer);padding:2px 8px;border-radius:5px;}
   .chiplbl{font-family:var(--mono);font-size:10.5px;color:var(--ink-3);}
 
+  /* give/get — the collaborative trade, visible on the counter itself */
+  .giveget{margin:9px 0 2px 23px;display:flex;flex-wrap:wrap;gap:7px;align-items:center;}
+  .gg{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;padding:3px 10px;border-radius:7px;
+    border:1px solid transparent;}
+  .gg .k{font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;opacity:.85;}
+  .gg .v{font-family:var(--mono);}
+  .gg.give{background:color-mix(in srgb,var(--good) 10%,transparent);color:var(--good);
+    border-color:color-mix(in srgb,var(--good) 28%,transparent);}
+  .gg.get{background:color-mix(in srgb,var(--buyer) 11%,transparent);color:var(--buyer);
+    border-color:color-mix(in srgb,var(--buyer) 28%,transparent);}
+  .gg-arrow{color:var(--ink-3);font-size:12px;}
+
   /* the guard hero */
   .guard-ok{margin-top:4px;font-size:12px;color:var(--good);display:flex;align-items:center;gap:7px;}
   .guard-reject{margin-top:4px;}
@@ -314,6 +326,7 @@
   <symbol id="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5 5l1.5 1.5M17.5 17.5 19 19M19 5l-1.5 1.5M6.5 17.5 5 19"/></symbol>
   <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></symbol>
   <symbol id="i-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></symbol>
 </defs></svg>
 
 <header>
@@ -620,13 +633,13 @@ function sectionTerms(){
   const opt = TERM_DEFS.filter(t=>t.toggle);
   return `<div class="panel">
     <div class="panel-hd"><svg width="15" height="15"><use href="#i-split"/></svg> Terms on the table
-      <span class="panel-sub">price, payment, and contract length are always in play — add more to widen the logrolling space.</span></div>
+      <span class="panel-sub">price, payment, and contract length are always in play. Click a chip below to add or drop a term — more terms widen the logrolling space.</span></div>
     <div class="termchips">
-      <span class="termchip fixed">Unit price</span>
-      <span class="termchip fixed">Payment terms</span>
-      <span class="termchip fixed">Contract length</span>
-      ${opt.map(t=>`<button type="button" class="termchip toggle${f[t.toggle]?" on":""}" data-toggle="${t.toggle}">
-        <svg width="12" height="12"><use href="#i-${f[t.toggle]?"check":"x"}"/></svg> ${esc(t.label)}</button>`).join("")}
+      <span class="termchip fixed" title="always negotiated — the spine of the deal">Unit price</span>
+      <span class="termchip fixed" title="always negotiated — the spine of the deal">Payment terms</span>
+      <span class="termchip fixed" title="always negotiated — the spine of the deal">Contract length</span>
+      ${opt.map(t=>`<button type="button" class="termchip toggle${f[t.toggle]?" on":""}" data-toggle="${t.toggle}" title="${f[t.toggle]?"click to drop this term":"click to add this term"}">
+        <svg width="12" height="12"><use href="#i-${f[t.toggle]?"check":"plus"}"/></svg> ${f[t.toggle]?"":"Add "}${esc(t.label)}</button>`).join("")}
     </div>
   </div>`;
 }
@@ -832,6 +845,7 @@ function renderMsg(m, side, compact){
   const from = m.from==="buyer" ? (side==="supplier"?"Buyer":"Peitho · buyer agent") : (side==="supplier"?"You · "+esc(M.form.supplier):esc(M.form.supplier));
   const cls = m.from;
   const av = m.from==="buyer" ? "B" : "S";
+  const giveget = (m.from==="buyer" && m.turn && !compact) ? giveGetRow(m.turn) : "";
   const drawer = (m.from==="buyer" && m.turn && !compact) ? reasonDrawer(m.turn) : "";
   return `<div class="msg ${cls}">
     <div class="msg-head">
@@ -840,6 +854,7 @@ function renderMsg(m, side, compact){
     </div>
     <div class="msg-body">${esc(m.text)}</div>
     ${m.from==="buyer"?`<div class="msg-sig">— Procurement, on behalf of the category manager</div>`:""}
+    ${giveget}
     ${drawer}
   </div>`;
 }
@@ -847,6 +862,25 @@ function renderMsg(m, side, compact){
 function skeleton(){
   return `<div class="skel"><div class="msg-head"><div class="avatar buyer">B</div><div><div class="msg-from">Peitho · buyer agent</div><div class="msg-meta">drafting…</div></div></div>
     <div class="line" style="width:88%"></div><div class="line" style="width:76%"></div><div class="line" style="width:60%"></div></div>`;
+}
+
+// The collaborative trade, made legible on the counter itself: what the agent GAVE
+// (concessions, routed to low-weight terms) to GET / hold what it values. Data is the
+// engine's own move_brief — no invented numbers. Hidden on the opening anchor & accepts.
+function giveGetRow(turn){
+  const b = turn.move_brief;
+  if(!b || b.is_opening || b.outcome!=="COUNTER") return "";
+  const moved = b.moved_terms||[];
+  const gives = moved.filter(m=>m.role==="concession");
+  const held = b.held_terms||[];
+  if(!gives.length && !held.length) return "";
+
+  const giveChips = gives.map(m=>`<span class="gg give" title="we moved on this to unlock the trade">
+    <span class="k">gave</span><span class="v">${esc(TERM_LABELS[m.name]||m.name.replace(/_/g," "))} ${esc(m.from_display)} → ${esc(m.to_display)}</span></span>`).join("");
+  const heldChips = held.map(h=>`<span class="gg get" title="held firm — the term we value">
+    <span class="k">held</span><span class="v">${esc(TERM_LABELS[h.name]||h.name.replace(/_/g," "))} ${esc(h.display)}</span></span>`).join("");
+  const arrow = (gives.length && held.length) ? `<span class="gg-arrow">→</span>` : "";
+  return `<div class="giveget">${giveChips}${arrow}${heldChips}</div>`;
 }
 
 function reasonDrawer(turn){
