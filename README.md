@@ -5,28 +5,71 @@
 
 # Negotiation Agent
 
-**A procurement negotiation agent where the LLM has zero authority.** The deal
-engine is deterministic Python — every accept/counter/walk-away decision is
-provable in tests. The language model (v1) may only extract offers, classify
-intent, and compose prose from an engine-approved **number allowlist**. It can
-never invent a concession.
+**A procurement negotiation agent where the LLM has zero authority.** A deterministic
+Python engine makes every accept / counter / walk-away call and fixes the exact figures
+a reply may state. A language model writes the emails — and **cannot state a number the
+engine didn't approve**: a violating draft is rejected and redrafted server-side before
+it's ever sent. Not "the AI negotiates for you" — the AI *drafts*, the engine *decides*,
+and the guarantee is mechanical, not a prompt.
 
-This is **v0**: the pure-Python core — envelope schema, deal engine, a headless
-agent-vs-agent simulator, and the eval suite. No UI, no network, no LLM calls.
+### ▶ Live demo — [web-production-a5b7b.up.railway.app](https://web-production-a5b7b.up.railway.app/)
 
-## Demos — open in a browser, no build
+Real Opus writing negotiation emails against the real engine, deployed. Click **Sign the
+mandate → Auto-play** and watch it negotiate; open **"Why this move"** to see the engine's
+threshold/utility math and the guard rejecting a draft in real time.
 
-Two single-file demos in [`demo/`](demo/), every number real engine output:
+---
 
-- **[`demo/fleet.html`](demo/fleet.html)** — an agent negotiating a whole **tail-spend
-  category (1,000 suppliers at once)**: the spend teams can't reach, closing in waves,
-  with a god's-eye buyer-vs-supplier drill-down. *The scale story.*
-- **[`demo/peitho.html`](demo/peitho.html)** — a **self-play negotiation** in two mirrored
-  panes (buyer view · supplier view), a reasoning drawer showing the real
-  accept/counter/escalate math + numeric-guard verdict, and a **meeting-minutes**
-  generator at close. Set either side to **🧑 Human** to type the messages yourself
-  and watch the engine react live; **upload a contract** to pre-fill the opening
-  position and pull a **supplier due-diligence brief**. *The mechanism story.*
+## How it works — the process
+
+The whole system is one rule applied at three seams: **the LLM advises, deterministic
+code decides.** Here's the flow of a negotiation:
+
+```
+  UPLOAD A CONTRACT ──► deep extraction (regex; LLM v1) ──► supplier research (Hades)
+        │                       │                                  │
+        └──────────────► CONTRACT INTELLIGENCE ◄───────────────────┘
+                                │
+              a DETERMINISTIC rule table maps findings ──► PROPOSED MANDATE ADJUSTMENTS
+              (expiry → lower the floor; no DPA → required gate; no rebate → a give-lever)
+                                │
+                    HUMAN REVIEWS & APPROVES the diff ──► the mandate is SIGNED (HMAC)
+                                │
+   ┌────────────────────────────┴────────────────────────────────────────────────┐
+   │  each round, statelessly on the server:                                      │
+   │  fold the transcript ► ENGINE decides accept/counter/escalate (Boulware) ►   │
+   │  build a move-brief ► LLM DRAFTS the email ► GUARD checks every figure ►      │
+   │  violation? ─► redraft (or a deterministic template) ─► release only if clean │
+   └──────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Three flows a user can drive:**
+
+1. **Walk in prepared** *(new)* — paste the current/expiring contract. The agent extracts
+   the deal (price, payment, volume, expiry, licenses, NDA/DPA, units of measure),
+   researches the supplier, and proposes how the intelligence should **shape the mandate** —
+   each change tagged *give / hold / hedge* with a plain rationale. You approve every one.
+   Critically, the LLM never edits the envelope: a pure-Python rule table maps findings to
+   bounded, reversible deltas, and a human signs the diff. *("LLM advises, code decides"
+   applied to mandate construction — see [`docs/contract-intelligence-architecture.md`](docs/contract-intelligence-architecture.md).)*
+
+2. **Watch it negotiate** — set the levers (target, floor, term weights, add/remove terms,
+   supplier persona + concession pace), sign, and auto-play. The email thread fills; the
+   reasoning drawer shows the engine math and the guard holding the line.
+
+3. **Play a seat yourself** — the older self-play demos (`demo/peitho.html`,
+   `demo/fleet.html`) let you type as the buyer or supplier and watch the engine react.
+
+## Demos
+
+- **▶ [Live v2](https://web-production-a5b7b.up.railway.app/)** — the deployed app: real
+  engine + real Opus/Haiku, contract intelligence, the visible guard. This is the one to open.
+- **[`demo/peitho-v2.html`](demo/peitho-v2.html)** — the same v2 UI (source); runs against
+  the live backend when opened locally.
+- **[`demo/fleet.html`](demo/fleet.html)** — the **1,000-supplier tail-spend fleet**, every
+  negotiation a real engine run. *The scale story.*
+- **[`demo/peitho.html`](demo/peitho.html)** — the original single-file self-play demo
+  (engine ported to JS, offline). *The mechanism story, no backend needed.*
 
 ```text
 $ neg-sim
@@ -63,7 +106,7 @@ neg-sim --baseline                         # logrolling vs price-split (the proo
 neg-sim --transcript ref/aggressive/oracle # replay one negotiation, turn by turn
 neg-sim --json                             # machine-readable metrics
 
-pytest -q                                  # 92 tests, all green
+pytest -q                                  # 183 tests, all green
 mypy && ruff check .                       # strict types, clean lint
 ```
 
@@ -258,28 +301,31 @@ linear-additive utility model, which is what makes the audit replay exact.
 
 ## Roadmap
 
-- **v0 (this repo)** — envelope schema, engine, baseline, simulator, evals. Pure
-  Python, CI-gated. ✅
-- **v1 (in progress)** — negotiate with a real human supplier over email/chat. LLM
-  extractor (Pydantic + per-field confidence), intent classifier, reply composer
-  behind the numeric guard, prompt-injection red-team suite; FastAPI + Postgres,
-  autonomous close within envelope. **Full design:
-  [docs/v1-architecture.md](docs/v1-architecture.md).**
-  - **Landed so far:** contract intake ([`intake.py`](src/negotiation_agent/intake.py),
-    a hardened regex extractor behind a `ContractExtractor` seam the LLM extractor
-    plugs into), supplier due-diligence research via the **Hades** agent
-    ([`research.py`](src/negotiation_agent/research.py)), a pre-flight orchestrator
-    ([`prepare.py`](src/negotiation_agent/prepare.py)), and a `POST /prepare`
-    endpoint ([`api.py`](src/negotiation_agent/api.py), optional `[web]` extra).
-    Research **informs the human, never feeds the engine** — decisions stay a pure
-    function of the signed mandate.
-- **v2** — DocuSign close, chat channel, buyer dashboard, Art. 50 AI-disclosure banner.
+- **v0 — the deterministic core.** ✅ Envelope schema, engine, logrolling baseline,
+  headless simulator, evals. Pure Python, CI-gated.
+- **v1 — a live LLM-drafted negotiation.** ✅ **Deployed** at
+  [web-production-a5b7b.up.railway.app](https://web-production-a5b7b.up.railway.app/).
+  A stateless FastAPI backend ([`api.py`](src/negotiation_agent/api.py)): the real engine
+  runs server-side, folds the transcript each turn, drafts with Opus (buyer) / Haiku
+  (supplier), and enforces the **guard-with-redraft** loop
+  ([`negotiate.py`](src/negotiation_agent/negotiate.py), [`guard.py`](src/negotiation_agent/guard.py))
+  so a violating draft never reaches the wire. Mandates are HMAC-signed
+  ([`signing.py`](src/negotiation_agent/signing.py)); a human plays either seat.
+- **Contract intelligence — the "prepared buyer".** ✅ Upload a contract → extraction
+  ([`intake.py`](src/negotiation_agent/intake.py), [`intelligence.py`](src/negotiation_agent/intelligence.py))
+  + supplier research via the **Hades** agent ([`research.py`](src/negotiation_agent/research.py))
+  → a **deterministic finding→mandate transform** ([`shaper.py`](src/negotiation_agent/shaper.py),
+  21 property tests) that a human approves before signing. **Full design:**
+  [docs/contract-intelligence-architecture.md](docs/contract-intelligence-architecture.md).
+- **Next.** LLM contract extractor (richer clauses / NDA-DPA *absence*, behind the same
+  `ContractExtractor` seam); AI-Brain integration — recall prior deals from an Obsidian
+  vault and write supplier notes back (runs locally, not on the deploy — the vault is
+  local); DocuSign close, Art. 50 AI-disclosure banner.
 
-**v1 seams already in place:** `SupplierAgent` protocol (a Claude-backed supplier
-drops in behind `respond()`), `SupplierModel.from_intents()` (the classifier's
-plug point), `approved_numbers` (the guard's allowlist), the `ContractExtractor`
-seam (deterministic today, LLM tomorrow), and an `injection_pass_rate` metric
-placeholder.
+**The guarantee, everywhere:** `approved_numbers` (the drafter's allowlist), the
+guard-with-redraft loop (a figure the engine didn't approve cannot ship), and the
+deterministic mandate transform (findings shape the envelope, the LLM never does). The
+determinism of the mandate is the product's credibility.
 
 ## License
 
