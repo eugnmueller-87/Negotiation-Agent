@@ -1,0 +1,12 @@
+# Runtime dependencies for the DEPLOYED Peitho v2 backend (Railway/Nixpacks).
+#
+# Named requirements.txt (not -deploy) because Nixpacks stages this exact filename
+# into the install layer before the rest of the source is copied. The container
+# runs uvicorn against src/ on PYTHONPATH (see nixpacks.toml) rather than installing
+# the package — sidesteps the src-layout wheel build. Keep in sync with the [web]
+# extra in pyproject.toml. This file does NOT drive local dev or CI (those use
+# `pip install -e '.[dev]'` / `'.[web]'` from pyproject.toml).
+pydantic>=2.6,<3
+fastapi>=0.110
+uvicorn>=0.29
+anthropic>=0.40
