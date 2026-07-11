@@ -22,9 +22,10 @@ In the Railway service → **Variables**, add:
 |---|---|---|
 | `ANTHROPIC_API_KEY` | your Anthropic key | drafts buyer (Opus) + supplier (Haiku) |
 | `PEITHO_MANDATE_SECRET` | a random 32-byte hex | **required** — signs the mandate. Generate: `python -c "import secrets; print(secrets.token_hex(32))"` |
-| `DEMO_GODVIEW` | `1` | **set for the demo** — lets the reasoning drawer show the engine's internal threshold/utility (the whole point of the demo). Pair with the `X-Peitho-Godview` header the demo already sends. |
+| `PEITHO_GODVIEW_TOKEN` | a random secret, or **leave unset** | **Leave UNSET on a public instance** — god-view exposes the buyer's reservation floor. Unset ⇒ god-view is OFF (fail-closed). Set it only to reveal internals to yourself: then open the demo with `#gv=<token>` in the URL. Do NOT set the old `DEMO_GODVIEW`; a client header no longer unlocks anything. |
+| `PEITHO_ALLOWED_ORIGINS` | your demo origin(s), comma-separated | **set on a public deploy** — locks CORS to your front-end. Unset ⇒ `*` (with a startup warning). |
 | `HADES_API_KEY` | your Hades key | optional — enables live `/prepare` supplier research |
-| `HADES_URL` | `https://hades-production-b86a.up.railway.app` | optional |
+| `HADES_URL` | `https://hades-production-b86a.up.railway.app` | optional — must be `https://` |
 
 > **The demo UI** is served at the service root `/` (same app, same URL). Open
 > `https://<your-service>.up.railway.app/` in a browser and it runs the live
@@ -32,13 +33,24 @@ In the Railway service → **Variables**, add:
 > same host.
 
 Optional tuning (sensible defaults, override only if needed):
-`PEITHO_MANDATE_TTL` (3600), `PEITHO_RATE_PER_MIN` (20). Set `DEMO_GODVIEW=1`
-**only** on a demo instance to allow the god-view internal block.
+`PEITHO_MANDATE_TTL` (3600), `PEITHO_RATE_PER_MIN` (20),
+`PEITHO_RESEARCH_RATE_PER_MIN` (4, the stricter cap on the paid Hades routes),
+`PEITHO_TRUSTED_PROXIES` (1 — the number of reverse proxies in front of the app;
+Railway = 1. This is how the rate limiter resolves the real client IP from
+`X-Forwarded-For`; a wrong value here either lets the limiter be bypassed or keys
+everyone to the proxy IP).
+
+> **Security note (Fable-5 audit, 2026-07-11):** god-view is now gated on the
+> secret `PEITHO_GODVIEW_TOKEN` (constant-time compare), never a client header —
+> leave it unset on any internet-reachable instance so the reservation floor can't
+> leak. The rate limiter keys on the edge-resolved IP (`PEITHO_TRUSTED_PROXIES`),
+> not a spoofable `X-Forwarded-For` prefix.
 
 > Add these same keys to `.env.example` in the repo (keys only, empty values) —
 > it's write-protected by the secret-scan hook, so edit it by hand. The vars are
-> `ANTHROPIC_API_KEY`, `PEITHO_MANDATE_SECRET`, `PEITHO_MANDATE_TTL`,
-> `PEITHO_RATE_PER_MIN`, `DEMO_GODVIEW`, `HADES_API_KEY`, `HADES_URL`.
+> `ANTHROPIC_API_KEY`, `PEITHO_MANDATE_SECRET`, `PEITHO_GODVIEW_TOKEN`,
+> `PEITHO_ALLOWED_ORIGINS`, `PEITHO_MANDATE_TTL`, `PEITHO_RATE_PER_MIN`,
+> `PEITHO_RESEARCH_RATE_PER_MIN`, `PEITHO_TRUSTED_PROXIES`, `HADES_API_KEY`, `HADES_URL`.
 
 ### 2. Deploy on Railway (Hobby plan)
 
