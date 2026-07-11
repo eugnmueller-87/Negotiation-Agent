@@ -20,8 +20,9 @@ In the Railway service → **Variables**, add:
 
 | Variable | Value | Notes |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | your Anthropic key | drafts buyer (Opus) + supplier (Haiku) |
+| `ANTHROPIC_API_KEY` | your Anthropic key | drafts buyer (Opus) + supplier (Haiku) — **only used in full mode** (see `PEITHO_FULL_TOKEN`) |
 | `PEITHO_MANDATE_SECRET` | a random 32-byte hex | **required** — signs the mandate. Generate: `python -c "import secrets; print(secrets.token_hex(32))"` |
+| `PEITHO_FULL_TOKEN` | a random secret, or **leave unset** | **The demo/full switch.** UNSET ⇒ the public URL runs the cost-free DEMO (real engine, templated messages, no LLM/Hades — $0). Set it to a secret to enable the FULL version (Opus/Haiku/Hades) for yourself: open the demo with `#full=<token>` in the URL. **Fail-closed:** with no token set, nothing can trigger paid calls even though the keys are present. Rotate if the full link leaks. |
 | `PEITHO_GODVIEW_TOKEN` | a random secret, or **leave unset** | **Leave UNSET on a public instance** — god-view exposes the buyer's reservation floor. Unset ⇒ god-view is OFF (fail-closed). Set it only to reveal internals to yourself: then open the demo with `#gv=<token>` in the URL. Do NOT set the old `DEMO_GODVIEW`; a client header no longer unlocks anything. |
 | `PEITHO_ALLOWED_ORIGINS` | your demo origin(s), comma-separated | **set on a public deploy** — locks CORS to your front-end. Unset ⇒ `*` (with a startup warning). |
 | `HADES_API_KEY` | your Hades key | optional — enables live `/prepare` supplier research |
@@ -48,9 +49,25 @@ everyone to the proxy IP).
 
 > Add these same keys to `.env.example` in the repo (keys only, empty values) —
 > it's write-protected by the secret-scan hook, so edit it by hand. The vars are
-> `ANTHROPIC_API_KEY`, `PEITHO_MANDATE_SECRET`, `PEITHO_GODVIEW_TOKEN`,
-> `PEITHO_ALLOWED_ORIGINS`, `PEITHO_MANDATE_TTL`, `PEITHO_RATE_PER_MIN`,
-> `PEITHO_RESEARCH_RATE_PER_MIN`, `PEITHO_TRUSTED_PROXIES`, `HADES_API_KEY`, `HADES_URL`.
+> `ANTHROPIC_API_KEY`, `PEITHO_MANDATE_SECRET`, `PEITHO_FULL_TOKEN`,
+> `PEITHO_GODVIEW_TOKEN`, `PEITHO_ALLOWED_ORIGINS`, `PEITHO_MANDATE_TTL`,
+> `PEITHO_RATE_PER_MIN`, `PEITHO_RESEARCH_RATE_PER_MIN`, `PEITHO_TRUSTED_PROXIES`,
+> `HADES_API_KEY`, `HADES_URL`.
+
+### Portfolio (demo) vs. full version
+
+One deploy serves both. The **public portfolio URL** (`https://<service>/`) runs the real
+deterministic engine with **templated messages and no research — $0 to run, nothing to abuse**.
+The **full version** (Opus writes the buyer prose, Haiku plays the supplier, live Hades
+due-diligence) is the same URL with the secret token in the fragment:
+
+```
+https://<service>/                    → demo   (free, for the portfolio)
+https://<service>/#full=<PEITHO_FULL_TOKEN>   → full   (paid, keep this link private)
+```
+
+Put the plain URL in your portfolio; keep the `#full=…` link for yourself. If the full link
+leaks, rotate `PEITHO_FULL_TOKEN` (the per-IP rate limits cap the damage until you do).
 
 ### 2. Deploy on Railway (Hobby plan)
 
