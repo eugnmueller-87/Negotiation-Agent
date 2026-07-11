@@ -178,9 +178,12 @@ def _ingest_entry(entry: ManifestEntry, root: Path) -> list[Chunk]:
     if entry.scrub_personal:
         body = strip_jobhunt_sections(body)
     body = redact_contacts(body)  # strip emails/phones from every file
-    # Detect the procurement category once per file (whole-doc signal is stronger than a
-    # single chunk's) and stamp it on every chunk so retrieval can scope by category.
-    category, _ = detect_category(body)
+    # An authored playbook pins its category in the manifest; otherwise detect it once per
+    # file (whole-doc signal beats a chunk's). Stamp it on every chunk so retrieval can scope.
+    if entry.category:
+        category = entry.category
+    else:
+        category, _ = detect_category(body)
     # Final content gate: drop any chunk that still carries a personal marker. Applied to
     # every file, so the scrub can't be bypassed by a mis-flagged entry.
     return [

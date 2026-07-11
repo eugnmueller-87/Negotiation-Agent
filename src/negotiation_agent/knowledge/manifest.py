@@ -26,6 +26,9 @@ class ManifestEntry(BaseModel):
     # Frontmatter is stripped from every file regardless; this flag adds the heavier
     # job-hunt/career SECTION scrub for files (Companies/*) that interleave personal data.
     scrub_personal: bool = False
+    # An authored playbook has a KNOWN procurement category; pin it here so ingest uses it
+    # instead of re-detecting (a playbook that discusses adjacent categories can mis-detect).
+    category: str = ""
 
 
 class Manifest(BaseModel):

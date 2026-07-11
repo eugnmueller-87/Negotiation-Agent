@@ -90,6 +90,69 @@ def test_unmapped_unspsc_falls_through_to_keywords():
     assert cat == "cloud_infrastructure"
 
 
+# ── CPV crosswalk — the EU procurement standard (German Vergabe / TED) ────────────
+@pytest.mark.parametrize(
+    ("code", "expected"),
+    [
+        ("66000000", "financial_insurance"),  # division 66
+        ("30000000", "it_hardware"),  # division 30
+        ("50000000", "repair_maintenance"),  # division 50
+        ("71000000", "engineering_construction"),  # division 71
+        ("70000000", "real_estate"),  # division 70
+        ("64000000", "telecom_services"),  # division 64
+        ("80000000", "training_education"),  # division 80
+        ("55000000", "travel_catering"),  # division 55
+        ("79600000", "hr_staffing_agency"),  # group 796 beats the mixed 79 division
+        ("79100000", "legal_services"),  # group 791
+        ("48000000", "software_licenses"),  # division 48
+        ("99999999", "unknown"),  # unmapped -> honest unknown
+    ],
+)
+def test_category_from_cpv(code, expected):
+    from negotiation_agent.knowledge.cpv import category_from_cpv
+
+    assert category_from_cpv(code) == expected
+
+
+def test_cpv_code_in_text_beats_keywords():
+    # a contract CODED financial wins even if the body mentions 'cloud' in passing
+    cat, hits = detect_category("Tender ref CPV 66510000. cloud hosting mentioned once.")
+    assert cat == "financial_insurance"
+    assert any("66510000" in h for h in hits)
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        (
+            "General liability insurance premium, underwriting, actuarial reserves",
+            "financial_insurance",
+        ),
+        (
+            "Fleet maintenance contract, preventive maintenance, spare parts, uptime",
+            "repair_maintenance",
+        ),
+        (
+            "Office lease, landlord, service charge, dilapidations, rent per square metre",
+            "real_estate",
+        ),
+        (
+            "E-learning curriculum, certification course, learning management, instructor",
+            "training_education",
+        ),
+        ("Corporate travel management, hotel room rate, per diem, airfare", "travel_catering"),
+        (
+            "Mobile plan, roaming, leased line, ISP connectivity, carrier contract",
+            "telecom_services",
+        ),
+    ],
+)
+def test_new_bucket_keyword_detection(text, expected):
+    cat, hits = detect_category(text)
+    assert cat == expected
+    assert hits
+
+
 def test_every_category_has_a_label():
     for cat, _ in [(c, None) for c in CATEGORY_LABELS]:
         assert CATEGORY_LABELS[cat]

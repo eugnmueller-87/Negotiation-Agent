@@ -653,27 +653,98 @@
     {
       "path": "docs/kb/hr-staffing-agency-negotiation.md",
       "tag": "negotiation-strategy",
-      "scrub_personal": false
+      "scrub_personal": false,
+      "category": "hr_staffing_agency"
     },
     {
       "path": "docs/kb/facility-services-negotiation.md",
       "tag": "negotiation-strategy",
-      "scrub_personal": false
+      "scrub_personal": false,
+      "category": "facility_services"
     },
     {
       "path": "docs/kb/marketing-agency-negotiation.md",
       "tag": "negotiation-strategy",
-      "scrub_personal": false
+      "scrub_personal": false,
+      "category": "marketing"
     },
     {
       "path": "docs/kb/logistics-freight-negotiation.md",
       "tag": "negotiation-strategy",
-      "scrub_personal": false
+      "scrub_personal": false,
+      "category": "logistics"
     },
     {
       "path": "docs/kb/hr-services-negotiation.md",
       "tag": "negotiation-strategy",
-      "scrub_personal": false
+      "scrub_personal": false,
+      "category": "hr_services"
+    },
+    {
+      "path": "docs/kb/financial-insurance-negotiation.md",
+      "tag": "negotiation-strategy",
+      "scrub_personal": false,
+      "category": "financial_insurance"
+    },
+    {
+      "path": "docs/kb/it-hardware-negotiation.md",
+      "tag": "negotiation-strategy",
+      "scrub_personal": false,
+      "category": "it_hardware"
+    },
+    {
+      "path": "docs/kb/repair-maintenance-negotiation.md",
+      "tag": "negotiation-strategy",
+      "scrub_personal": false,
+      "category": "repair_maintenance"
+    },
+    {
+      "path": "docs/kb/engineering-construction-negotiation.md",
+      "tag": "negotiation-strategy",
+      "scrub_personal": false,
+      "category": "engineering_construction"
+    },
+    {
+      "path": "docs/kb/real-estate-lease-negotiation.md",
+      "tag": "negotiation-strategy",
+      "scrub_personal": false,
+      "category": "real_estate"
+    },
+    {
+      "path": "docs/kb/telecoms-equipment-negotiation.md",
+      "tag": "negotiation-strategy",
+      "scrub_personal": false,
+      "category": "telecoms_equipment"
+    },
+    {
+      "path": "docs/kb/telecom-services-negotiation.md",
+      "tag": "negotiation-strategy",
+      "scrub_personal": false,
+      "category": "telecom_services"
+    },
+    {
+      "path": "docs/kb/training-education-negotiation.md",
+      "tag": "negotiation-strategy",
+      "scrub_personal": false,
+      "category": "training_education"
+    },
+    {
+      "path": "docs/kb/travel-catering-negotiation.md",
+      "tag": "negotiation-strategy",
+      "scrub_personal": false,
+      "category": "travel_catering"
+    },
+    {
+      "path": "docs/kb/installation-services-negotiation.md",
+      "tag": "negotiation-strategy",
+      "scrub_personal": false,
+      "category": "installation"
+    },
+    {
+      "path": "docs/kb/other-business-services-negotiation.md",
+      "tag": "negotiation-strategy",
+      "scrub_personal": false,
+      "category": "other_business"
     }
   ],
   "exclude_globs": [

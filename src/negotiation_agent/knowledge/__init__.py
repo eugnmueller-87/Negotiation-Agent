@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from negotiation_agent.knowledge.bm25 import Bm25Index, Hit
 from negotiation_agent.knowledge.category import CATEGORY_LABELS, Category, detect_category
+from negotiation_agent.knowledge.cpv import category_from_cpv
 from negotiation_agent.knowledge.ingest import Chunk, ingest
 from negotiation_agent.knowledge.manifest import Manifest, ManifestEntry, load_manifest
 from negotiation_agent.knowledge.retrieve import (
@@ -41,6 +42,7 @@ __all__ = [
     "ManifestEntry",
     "Register",
     "category_coverage",
+    "category_from_cpv",
     "category_from_unspsc",
     "detect_category",
     "detect_register",

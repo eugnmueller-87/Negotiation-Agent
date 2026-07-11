@@ -114,6 +114,24 @@ def test_ingest_entry_drops_personal_chunks(tmp_path: Path):
     assert "wehner" not in joined
 
 
+def test_pinned_category_overrides_detection(tmp_path: Path):
+    # an authored playbook that TALKS about insurance but is pinned engineering keeps its pin
+    from negotiation_agent.knowledge.ingest import _ingest_entry
+
+    f = tmp_path / "eng.md"
+    f.write_text(
+        "# Engineering fees\n\nNegotiate professional indemnity insurance premium levels and "
+        "the fee basis for the architect and civil engineering scope.\n",
+        encoding="utf-8",
+    )
+    entry = ManifestEntry(
+        path="eng.md", tag="negotiation-strategy", category="engineering_construction"
+    )
+    chunks = _ingest_entry(entry, tmp_path)
+    assert chunks
+    assert all(c.category == "engineering_construction" for c in chunks)  # pin wins over keywords
+
+
 # ── BM25 retrieval ──────────────────────────────────────────────────────────────
 def _index() -> Bm25Index:
     chunks = [
