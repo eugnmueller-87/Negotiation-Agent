@@ -315,12 +315,16 @@ def negotiate_open(req: OpenRequest) -> JSONResponse:
     )
     try:
         message, audit = draft_and_guard(
-            draft_client_factory(), brief, decision.approved_numbers, []
+            draft_client_factory(),
+            brief,
+            decision.approved_numbers,
+            [],
+            req.correspondents.model_dump(),
         )
     except Exception:  # noqa: BLE001 - degrade to fallback, never leak the LLM error
-        from negotiation_agent.fallback import render_fallback
+        from negotiation_agent.fallback import render_fallback, wrap_letter
 
-        message = render_fallback(brief)
+        message = wrap_letter(render_fallback(brief), req.correspondents.model_dump())
         audit = GuardAudit(released_by="fallback", attempts=[])
 
     turn = turn_result(
@@ -392,18 +396,26 @@ def negotiate_step(req: StepRequest, request: Request) -> JSONResponse:
             decision, envelope, prev_counter, engine.config.max_rounds, priorities=engine.priorities
         )
         try:
-            message, audit = draft_and_guard(draft_client_factory(), brief, approved, _thread(req))
+            message, audit = draft_and_guard(
+                draft_client_factory(),
+                brief,
+                approved,
+                _thread(req),
+                req.correspondents.model_dump(),
+            )
         except Exception:  # noqa: BLE001 - degrade to fallback, never a 500 from the LLM
-            from negotiation_agent.fallback import render_fallback
+            from negotiation_agent.fallback import render_fallback, wrap_letter
 
-            message, audit = render_fallback(brief), GuardAudit(released_by="fallback", attempts=[])
+            msg = wrap_letter(render_fallback(brief), req.correspondents.model_dump())
+            message, audit = msg, GuardAudit(released_by="fallback", attempts=[])
     else:  # ESCALATE — figure-free holding note
         brief = build_move_brief(
             decision, envelope, prev_counter, engine.config.max_rounds, priorities=engine.priorities
         )
-        from negotiation_agent.fallback import render_fallback
+        from negotiation_agent.fallback import render_fallback, wrap_letter
 
-        message, audit = render_fallback(brief), GuardAudit(released_by="fallback", attempts=[])
+        msg = wrap_letter(render_fallback(brief), req.correspondents.model_dump())
+        message, audit = msg, GuardAudit(released_by="fallback", attempts=[])
 
     terminal = decision.outcome is not Outcome.COUNTER
     include_internal = _godview(request)

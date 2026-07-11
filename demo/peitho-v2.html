@@ -389,6 +389,7 @@ const M = {
   phase:"setup",
   form:{
     supplier:"Nordwerk Verpackung GmbH", category:"Corrugated packaging — annual supply",
+    supplierContact:"", buyerSignature:"Procurement Team",
     target:92, floor:108, paymentLever:60, contractMax:24, persona:"aggressive",
     // editable weights (emphasis) — 0..100 each; normalised across ENABLED terms only
     wPrice:50, wPayment:25, wContract:25, wRebate:20, wVolume:20,
@@ -427,6 +428,16 @@ async function post(path, body){
   const data = await r.json().catch(()=>({error:{code:"bad_response",message:"unreadable response"}}));
   if(!r.ok) throw Object.assign(new Error(data?.error?.message||"request failed"), {code:data?.error?.code, status:r.status});
   return data;
+}
+
+// Who the buyer letter is addressed to and signed by — drives the salutation + sign-off.
+function correspondents(){
+  const f = M.form;
+  return {
+    supplier_name: f.supplier || "",
+    supplier_contact: (f.supplierContact || "").trim(),
+    buyer_signature: (f.buyerSignature || "").trim() || "Procurement Team",
+  };
 }
 
 function buildMandate(){
@@ -661,6 +672,8 @@ function sectionSupplier(){
     <div class="panel-hd"><svg width="15" height="15"><use href="#i-inbox"/></svg> The counterparty
       <span class="panel-sub">the supplier is scripted (the buyer engine is the live part) — steer where it opens and how fast it moves.</span></div>
     <div class="grid" style="margin-top:12px">
+      ${field("Supplier contact","who we address the email to — leave blank to greet the team",`<input class="in" type="text" id="f-supplierContact" placeholder="e.g. Mr. Schmidt" value="${esc(f.supplierContact||"")}">`)}
+      ${field("Buyer signature","who signs the buyer's emails",`<input class="in" type="text" id="f-buyerSignature" value="${esc(f.buyerSignature||"")}">`)}
       ${field("Supplier opening price (€/unit)","where it starts",`<input class="in" type="number" step="0.5" id="f-supplierOpen" value="${f.supplierOpen}">`)}
       <div class="fld"><label>Concession pace <i>· how fast it gives ground</i></label>
         <div class="seg">${paces.map(p=>`<button type="button" class="segbtn${f.concession===p.id?" on":""}" data-pace="${p.id}">${p.l}</button>`).join("")}</div></div>
@@ -674,7 +687,7 @@ function field(label,note,input){
   return `<div class="fld"><label>${label}${note?` <i>· ${note}</i>`:""}</label>${input}</div>`;
 }
 function bindSetup(){
-  ["supplier","category","target","floor","paymentLever","contractMax","supplierOpen"].forEach(k=>{
+  ["supplier","category","supplierContact","buyerSignature","target","floor","paymentLever","contractMax","supplierOpen"].forEach(k=>{
     const el=$("#f-"+k); if(el) el.oninput=()=>{ M.form[k]= el.type==="number"?+el.value:el.value; };
   });
   app.querySelectorAll(".persona").forEach(b=>b.onclick=()=>{ M.form.persona=b.dataset.p; render(); });
@@ -863,7 +876,7 @@ function renderMsg(m, side, compact){
       <div><div class="msg-from">${from}</div><div class="msg-meta">${m.from==="buyer"?"to supplier":"to buyer"} · round ${m.round}</div></div>
     </div>
     <div class="msg-body">${esc(m.text)}</div>
-    ${m.from==="buyer"?`<div class="msg-sig">— Procurement, on behalf of the category manager</div>`:""}
+    ${m.from==="buyer"?`<div class="msg-sig">— drafted by Peitho on behalf of the category manager</div>`:""}
     ${giveget}
     ${drawer}
   </div>`;
@@ -1032,7 +1045,7 @@ async function start(){
   M.phase="running"; render();
   try{
     const mandate = buildMandate();
-    const res = await post("/negotiate/open", {mandate, session_id:M.session});
+    const res = await post("/negotiate/open", {mandate, session_id:M.session, correspondents:correspondents()});
     M.signed = res.signed_mandate;
     pushTurn(res.turn, /*round*/0);
   }catch(e){ M.error = e.message; }
@@ -1076,6 +1089,7 @@ async function step(){
       transcript: {turns: M.transcript},
       supplier_input: {mode:"bot", raw_text:supText, persona:M.form.persona},
       session_id: M.session,
+      correspondents: correspondents(),
     };
     const res = await post("/negotiate/step", body);
     M.transcript.push({terms:offerTerms, raw_text:supText}); // now part of the fold

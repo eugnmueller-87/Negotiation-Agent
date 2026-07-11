@@ -29,8 +29,7 @@ _COUNTER_TEMPLATES = [
 ]
 
 _ACCEPT_TEMPLATES = [
-    "That works for us — we're happy to proceed at {figures}. I'll have the paperwork "
-    "drawn up.",
+    "That works for us — we're happy to proceed at {figures}. I'll have the paperwork drawn up.",
     "Agreed. Let's lock it in at {figures} and move to signature.",
     "We have a deal at {figures}. I'll get the contract started.",
 ]
@@ -83,6 +82,26 @@ def render_fallback(brief: MoveBrief, *, variant: int = 0) -> str:
     if brief.outcome == "ACCEPT":
         return _ACCEPT_TEMPLATES[variant % len(_ACCEPT_TEMPLATES)].format(figures=figures)
     return _COUNTER_TEMPLATES[variant % len(_COUNTER_TEMPLATES)].format(figures=figures)
+
+
+def wrap_letter(body: str, correspondents: dict[str, str] | None) -> str:
+    """Add a salutation + sign-off around a bare message body, from the correspondents.
+
+    Deterministic mirror of the LLM's formatting rule, used on the fallback path so a
+    template message reads like a real email too. No-op if no correspondents are given.
+    """
+    if not correspondents:
+        return body
+    contact = correspondents.get("supplier_contact", "").strip()
+    supplier = correspondents.get("supplier_name", "").strip()
+    signature = correspondents.get("buyer_signature", "").strip() or "Procurement Team"
+    if contact:
+        greeting = f"Dear {contact},"
+    elif supplier:
+        greeting = f"Dear {supplier} team,"
+    else:
+        greeting = "Hello,"
+    return f"{greeting}\n\n{body}\n\nBest regards,\n{signature}"
 
 
 def build_redraft_instruction(violations: list[str], approved: dict[str, float]) -> str:

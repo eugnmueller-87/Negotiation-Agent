@@ -107,6 +107,21 @@ class BuyerInput(BaseModel):
     raw_text: str
 
 
+class Correspondents(BaseModel):
+    """Who the letter is addressed to and signed by — for a proper salutation + sign-off.
+
+    All optional: with a named ``supplier_contact`` the greeting is personal ("Dear Mr.
+    Schmidt,"); with only ``supplier_name`` it's "Dear <company> team,"; with neither it
+    falls back to a neutral greeting. None of these are figures, so the guard is unaffected.
+    """
+
+    model_config = {"frozen": True}
+
+    supplier_name: str = ""
+    supplier_contact: str = ""  # a named person, e.g. "Mr. Schmidt" / "Ms. Rossi"
+    buyer_signature: str = "Procurement Team"
+
+
 class OpenRequest(BaseModel):
     """Start a negotiation: the server signs the mandate and drafts the anchor."""
 
@@ -115,6 +130,7 @@ class OpenRequest(BaseModel):
     mandate: MandateEnvelope
     session_id: str = Field(min_length=1)
     supplier_persona: Literal["cooperative", "aggressive", "evasive"] = "aggressive"
+    correspondents: Correspondents = Field(default_factory=Correspondents)
 
 
 class StepRequest(BaseModel):
@@ -127,6 +143,7 @@ class StepRequest(BaseModel):
     supplier_input: SupplierInput = Field(default_factory=SupplierInput)
     buyer_input: BuyerInput | None = None
     session_id: str = Field(min_length=1)
+    correspondents: Correspondents = Field(default_factory=Correspondents)
 
 
 # ---- Responses ----------------------------------------------------------------

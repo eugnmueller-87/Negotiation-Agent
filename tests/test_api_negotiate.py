@@ -59,7 +59,7 @@ MANDATE = {
 class _FakeDrafter:
     """Drafts using only the approved figures — always guard-clean."""
 
-    def draft_buyer(self, brief, thread, advice=None):
+    def draft_buyer(self, brief, thread, advice=None, correspondents=None):
         nums = " ".join(f"{v:g}" for v in brief.approved_numbers.values())
         return f"Our position: {nums}. Looking forward to working together."
 
@@ -112,6 +112,36 @@ def test_step_folds_and_counters(client):
     assert body["turn"]["internal"] is None
     # the redacted supplier view carries no reservation floor
     assert "0.6" not in r.text or "reservation" not in r.text
+
+
+def test_open_wraps_letter_with_correspondents_on_fallback(monkeypatch):
+    # force the fallback path so the deterministic letter-wrap is exercised over HTTP
+    class _Cheat:
+        def draft_buyer(self, brief, thread, advice=None, correspondents=None):
+            return "We'll pay €1.23 per unit."  # never approved -> falls back
+
+        def draft_supplier(self, persona, thread, company, category):
+            return "..."
+
+    monkeypatch.setenv("PEITHO_MANDATE_SECRET", SECRET)
+    monkeypatch.setattr(api, "draft_client_factory", lambda: _Cheat())
+    client = TestClient(api.app)
+    r = client.post(
+        "/negotiate/open",
+        json={
+            "mandate": MANDATE,
+            "session_id": "s1",
+            "correspondents": {
+                "supplier_name": "Nordwerk GmbH",
+                "supplier_contact": "Mr. Schmidt",
+                "buyer_signature": "E. Müller",
+            },
+        },
+    )
+    assert r.status_code == 200, r.text
+    msg = r.json()["turn"]["buyer_message"]
+    assert msg.startswith("Dear Mr. Schmidt,")
+    assert "Best regards,\nE. Müller" in msg
 
 
 def test_tampered_mandate_is_rejected(client):

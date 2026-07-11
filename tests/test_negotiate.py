@@ -22,15 +22,36 @@ from negotiation_agent.supplier_model import SupplierModel
 
 def _env():
     return Envelope(
-        negotiation_id="n", version=1, signed_by="t",
-        target_utility=0.90, reservation_utility=0.60,
+        negotiation_id="n",
+        version=1,
+        signed_by="t",
+        target_utility=0.90,
+        reservation_utility=0.60,
         terms=[
-            TermSpec(name="price", term_type=TermType.PRICE, direction=Direction.MINIMIZE,
-                     best=92.0, worst=108.0, weight=0.5),
-            TermSpec(name="payment_days", term_type=TermType.PAYMENT_DAYS,
-                     direction=Direction.MAXIMIZE, best=60.0, worst=30.0, weight=0.25),
-            TermSpec(name="contract_months", term_type=TermType.CONTRACT_MONTHS,
-                     direction=Direction.MINIMIZE, best=12.0, worst=24.0, weight=0.25),
+            TermSpec(
+                name="price",
+                term_type=TermType.PRICE,
+                direction=Direction.MINIMIZE,
+                best=92.0,
+                worst=108.0,
+                weight=0.5,
+            ),
+            TermSpec(
+                name="payment_days",
+                term_type=TermType.PAYMENT_DAYS,
+                direction=Direction.MAXIMIZE,
+                best=60.0,
+                worst=30.0,
+                weight=0.25,
+            ),
+            TermSpec(
+                name="contract_months",
+                term_type=TermType.CONTRACT_MONTHS,
+                direction=Direction.MINIMIZE,
+                best=12.0,
+                worst=24.0,
+                weight=0.25,
+            ),
         ],
     )
 
@@ -42,7 +63,7 @@ def _engine(env):
 class _CleanDrafter:
     """Always drafts a message using only the approved figures."""
 
-    def draft_buyer(self, brief, thread, advice=None):
+    def draft_buyer(self, brief, thread, advice=None, correspondents=None):
         nums = " ".join(f"{v:g}" for v in brief.approved_numbers.values())
         return f"Our position: {nums}. Happy to work together."
 
@@ -56,7 +77,7 @@ class _CheatingDrafter:
     def __init__(self):
         self.calls = 0
 
-    def draft_buyer(self, brief, thread, advice=None):
+    def draft_buyer(self, brief, thread, advice=None, correspondents=None):
         self.calls += 1
         if self.calls <= 2:
             return "We'll pay €1.23 per unit."  # never approved
@@ -68,7 +89,7 @@ class _CheatingDrafter:
 
 
 class _AlwaysCheatingDrafter:
-    def draft_buyer(self, brief, thread, advice=None):
+    def draft_buyer(self, brief, thread, advice=None, correspondents=None):
         return "We'll pay €1.23 per unit."  # never approved, never complies
 
     def draft_supplier(self, persona, thread, company, category):
@@ -77,8 +98,12 @@ class _AlwaysCheatingDrafter:
 
 def _brief(approved):
     return MoveBrief(
-        outcome="COUNTER", is_opening=False, round_band="mid", pressure="reciprocity",
-        approved_numbers=approved, reason_tag="counter",
+        outcome="COUNTER",
+        is_opening=False,
+        round_band="mid",
+        pressure="reciprocity",
+        approved_numbers=approved,
+        reason_tag="counter",
     )
 
 
@@ -107,6 +132,21 @@ def test_unfixable_draft_falls_back_to_template():
     assert "1.23" not in msg  # the fallback is clean by construction
     # every rejected attempt is recorded, plus the released fallback
     assert audit.attempts[-1].ok is True
+
+
+def test_fallback_letter_carries_greeting_and_signoff():
+    # a fallback message is still a proper letter when correspondents are supplied
+    approved = {"price": 96.0, "payment_days": 45, "contract_months": 16}
+    corr = {
+        "supplier_contact": "Mr. Schmidt",
+        "supplier_name": "Nordwerk GmbH",
+        "buyer_signature": "E. Müller",
+    }
+    msg, audit = draft_and_guard(_AlwaysCheatingDrafter(), _brief(approved), approved, [], corr)
+    assert audit.released_by == "fallback"
+    assert msg.startswith("Dear Mr. Schmidt,")
+    assert msg.rstrip().endswith("E. Müller")
+    assert "Best regards," in msg
 
 
 def test_fold_replays_and_flags_a_prior_terminal_decision():
@@ -149,10 +189,21 @@ def test_consulted_sources_populated_for_a_counter():
     from negotiation_agent.negotiate import consulted_sources
 
     brief = MoveBrief(
-        outcome="COUNTER", is_opening=False, round_band="mid", pressure="reciprocity",
-        approved_numbers={"price": 96.0}, reason_tag="counter",
-        moved_terms=[MovedTerm(name="payment_days", from_display="30 days",
-                               to_display="45 days", direction_word="longer", role="concession")],
+        outcome="COUNTER",
+        is_opening=False,
+        round_band="mid",
+        pressure="reciprocity",
+        approved_numbers={"price": 96.0},
+        reason_tag="counter",
+        moved_terms=[
+            MovedTerm(
+                name="payment_days",
+                from_display="30 days",
+                to_display="45 days",
+                direction_word="longer",
+                role="concession",
+            )
+        ],
         held_terms=[HeldTerm(name="price", display="EUR 96")],
     )
     sources = consulted_sources(brief)
@@ -164,10 +215,37 @@ def test_consulted_sources_empty_on_escalate():
     from negotiation_agent.negotiate import consulted_sources
 
     brief = MoveBrief(
-        outcome="ESCALATE", is_opening=False, round_band="late", pressure="handoff",
-        approved_numbers={}, reason_tag="escalate",
+        outcome="ESCALATE",
+        is_opening=False,
+        round_band="late",
+        pressure="handoff",
+        approved_numbers={},
+        reason_tag="escalate",
     )
     assert consulted_sources(brief) == []
+
+
+def test_wrap_letter_named_contact():
+    from negotiation_agent.fallback import wrap_letter
+
+    out = wrap_letter("Body.", {"supplier_contact": "Ms. Rossi", "buyer_signature": "E.M."})
+    assert out.startswith("Dear Ms. Rossi,")
+    assert out.endswith("Best regards,\nE.M.")
+
+
+def test_wrap_letter_company_only_greets_the_team():
+    from negotiation_agent.fallback import wrap_letter
+
+    out = wrap_letter("Body.", {"supplier_name": "Nordwerk GmbH"})
+    assert out.startswith("Dear Nordwerk GmbH team,")
+    assert "Best regards,\nProcurement Team" in out  # default signature
+
+
+def test_wrap_letter_noop_without_correspondents():
+    from negotiation_agent.fallback import wrap_letter
+
+    assert wrap_letter("Body.", None) == "Body."
+    assert wrap_letter("Body.", {}) == "Body."
 
 
 def test_resolve_supplier_offer_inherits_standing_offer():

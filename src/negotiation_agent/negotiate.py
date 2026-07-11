@@ -21,7 +21,7 @@ from negotiation_agent.engine import (
     Outcome,
 )
 from negotiation_agent.envelope import Envelope, Offer
-from negotiation_agent.fallback import build_redraft_instruction, render_fallback
+from negotiation_agent.fallback import build_redraft_instruction, render_fallback, wrap_letter
 from negotiation_agent.guard import check
 from negotiation_agent.intake import extract_contract
 from negotiation_agent.knowledge.bm25 import Hit
@@ -144,6 +144,7 @@ def draft_and_guard(
     brief: MoveBrief,
     approved: dict[str, float],
     thread: list[dict[str, str]],
+    correspondents: dict[str, str] | None = None,
 ) -> tuple[str, GuardAudit]:
     """Draft the buyer message, guarding each attempt; redraft or fall back.
 
@@ -155,7 +156,7 @@ def draft_and_guard(
     work_thread = list(thread)
     advice = _retrieve_advice(brief)
     for _ in range(_MAX_REDRAFTS + 1):
-        draft = drafter.draft_buyer(brief, work_thread, advice)
+        draft = drafter.draft_buyer(brief, work_thread, advice, correspondents)
         violations = check(draft, approved)
         attempts.append(GuardAttempt(draft=draft, ok=not violations, violations=violations))
         if not violations:
@@ -165,7 +166,7 @@ def draft_and_guard(
             *thread,
             {"role": "system", "text": build_redraft_instruction(violations, approved)},
         ]
-    safe = render_fallback(brief, variant=len(attempts))
+    safe = wrap_letter(render_fallback(brief, variant=len(attempts)), correspondents)
     attempts.append(GuardAttempt(draft=safe, ok=True, violations=[]))
     return safe, GuardAudit(released_by="fallback", attempts=attempts)
 
