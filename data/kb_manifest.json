@@ -649,6 +649,31 @@
       "path": "docs/kb/options-for-mutual-gain.md",
       "tag": "negotiation-strategy",
       "scrub_personal": false
+    },
+    {
+      "path": "docs/kb/hr-staffing-agency-negotiation.md",
+      "tag": "negotiation-strategy",
+      "scrub_personal": false
+    },
+    {
+      "path": "docs/kb/facility-services-negotiation.md",
+      "tag": "negotiation-strategy",
+      "scrub_personal": false
+    },
+    {
+      "path": "docs/kb/marketing-agency-negotiation.md",
+      "tag": "negotiation-strategy",
+      "scrub_personal": false
+    },
+    {
+      "path": "docs/kb/logistics-freight-negotiation.md",
+      "tag": "negotiation-strategy",
+      "scrub_personal": false
+    },
+    {
+      "path": "docs/kb/hr-services-negotiation.md",
+      "tag": "negotiation-strategy",
+      "scrub_personal": false
     }
   ],
   "exclude_globs": [
