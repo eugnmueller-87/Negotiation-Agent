@@ -76,7 +76,10 @@ class ContractExtractor(Protocol):
 # Contract text is untrusted (upload / injection surface). Cap the input so no
 # regex can be driven quadratic by a pathological megabyte of digits, and bound
 # every numeric quantifier so a single token stays linear. Real figures are short.
-_MAX_CONTRACT_CHARS = 200_000  # ~200 KB of text; real contracts are far smaller
+# 2 MB of TEXT comfortably covers any real contract's words plus schedules/exhibits
+# (a 20 MB uploaded PDF is mostly images; its extracted text is a fraction of that).
+# If input still exceeds this, we truncate AND warn — never a silent cut.
+_MAX_CONTRACT_CHARS = 2_000_000  # ~2 MB of text
 
 # Term-name → the units/patterns we recognise in a contract. Kept as data so the
 # regex stub and the LLM prompt (v1) share one vocabulary.
@@ -126,8 +129,11 @@ class RegexContractExtractor:
     """
 
     def extract(self, contract_text: str) -> ContractExtraction:
-        # Cap untrusted input before any regex runs (ReDoS defense-in-depth).
-        text = (contract_text or "")[:_MAX_CONTRACT_CHARS]
+        # Cap untrusted input before any regex runs (ReDoS defense-in-depth). A cut is
+        # rare (real contract TEXT is far under 2 MB) but must be surfaced, not silent.
+        full = contract_text or ""
+        text = full[:_MAX_CONTRACT_CHARS]
+        truncated = len(full) > _MAX_CONTRACT_CHARS
         terms: list[ExtractedTerm] = []
 
         def add(name: str, pattern: re.Pattern[str]) -> None:
@@ -150,6 +156,11 @@ class RegexContractExtractor:
         supplier = sm.group(1).strip() if sm else None
 
         warnings: list[str] = []
+        if truncated:
+            warnings.append(
+                f"Document text exceeded {_MAX_CONTRACT_CHARS // 1000} KB and was truncated for "
+                f"analysis — only the first part was read. Split it or extract the key clauses."
+            )
         if not terms:
             warnings.append("No negotiable terms were recognised in the document.")
         if supplier is None:

@@ -109,6 +109,20 @@ def test_input_is_size_capped():
     assert all(t.name != "price" for t in ex.terms)
 
 
+def test_truncation_is_warned_not_silent():
+    from negotiation_agent.intake import _MAX_CONTRACT_CHARS
+
+    # a document past the cap must SAY it was truncated — never a silent cut
+    ex = extract_contract("x" * (_MAX_CONTRACT_CHARS + 1))
+    assert any("truncated" in w.lower() for w in ex.warnings)
+
+
+def test_normal_length_document_is_not_flagged_truncated():
+    # a realistic contract is far under the cap -> no truncation warning
+    ex = extract_contract("Supplier: Acme GmbH. Unit price: €9.00. Net-30 days.")
+    assert not any("truncated" in w.lower() for w in ex.warnings)
+
+
 def test_number_with_trailing_currency_parses():
     # European "11,50 €" style — the (?!\w) fix lets the trailing € match.
     ex = extract_contract("Preis: 11,50 € pro Stück.")
