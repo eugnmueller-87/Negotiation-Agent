@@ -162,6 +162,8 @@ async def extract_text_endpoint(file: UploadFile) -> JSONResponse:
     ``/intel`` — the same path a paste takes. Scanned PDFs (no text layer) and corrupt
     files come back as a typed 4xx with a human-safe message, never a silent empty string.
     """
+    from starlette.concurrency import run_in_threadpool
+
     from negotiation_agent.extract_text import ExtractError, extract_file
 
     # Read with a hard byte cap — don't trust Content-Length, count what actually arrives.
@@ -180,7 +182,9 @@ async def extract_text_endpoint(file: UploadFile) -> JSONResponse:
         return _err("empty_file", "the uploaded file is empty", 400)
 
     try:
-        result = extract_file(file.filename or "", data)
+        # pypdf/python-docx are CPU-bound; run off the event loop so one big PDF can't
+        # freeze every other request (including /health) on this single-worker instance.
+        result = await run_in_threadpool(extract_file, file.filename or "", data)
     except ExtractError as e:
         # 415 for an unsupported type, 422 for a readable-but-unusable file (scanned/corrupt)
         status = 415 if e.code == "unsupported_file_type" else 422
@@ -468,6 +472,12 @@ def negotiate_step(req: StepRequest, request: Request) -> JSONResponse:
         engine, envelope = build_engine(mandate)
     except (ValueError, KeyError) as e:
         return _err("bad_mandate", f"mandate is invalid: {e}", 400)
+
+    # The fold is bounded by the signed mandate: a transcript can't exceed the prior rounds
+    # (max_rounds − 1) plus the current turn. Reject an over-long transcript rather than
+    # replaying decide() over padding — the wire cap already bounds it, this makes it exact.
+    if len(req.transcript.turns) > engine.config.max_rounds:
+        return _err("transcript_too_long", "transcript exceeds the mandate's round budget", 400)
 
     # Re-extract the supplier's offer server-side (never trust the client's parse).
     prior_offers = offers_from_transcript(req.transcript.turns)

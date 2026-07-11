@@ -114,6 +114,35 @@ def test_step_folds_and_counters(client):
     assert "0.6" not in r.text or "reservation" not in r.text
 
 
+def test_open_rejects_unbounded_max_rounds(client):
+    # a client-authored mandate can't sign an enormous max_rounds to blow up the fold CPU —
+    # the wire cap (le=64) rejects it at validation (audit issue #16).
+    import copy
+
+    bad = copy.deepcopy(MANDATE)
+    bad["config"] = {**MANDATE["config"], "max_rounds": 10_000_000}
+    r = client.post("/negotiate/open", json={"mandate": bad, "session_id": "s1"})
+    assert r.status_code == 422  # pydantic validation rejects the oversized config
+
+
+def test_step_rejects_overlong_transcript(client):
+    # a transcript longer than the mandate's round budget is rejected, not folded over —
+    # the fold input is provably bounded by the signed mandate (audit issue #16).
+    signed = _open(client)["signed_mandate"]
+    turns = [{"terms": {}, "raw_text": "€105, net-30, 24 months."} for _ in range(20)]
+    r = client.post(
+        "/negotiate/step",
+        json={
+            "signed_mandate": signed,
+            "transcript": {"turns": turns},  # 20 > max_rounds (6)
+            "supplier_input": {"mode": "bot", "raw_text": "€105, net-30, 24 months."},
+            "session_id": "s1",
+        },
+    )
+    assert r.status_code == 400
+    assert r.json()["error"]["code"] == "transcript_too_long"
+
+
 def test_step_reports_misconfigured_not_tampered_when_secret_missing(client, monkeypatch):
     # a signed mandate exists, but the server loses PEITHO_MANDATE_SECRET (e.g. a redeploy
     # drops the env var). /step must report a server misconfiguration (500), NOT blame the

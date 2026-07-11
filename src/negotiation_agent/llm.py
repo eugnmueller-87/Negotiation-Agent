@@ -119,9 +119,17 @@ def _advice_block(advice: list[str] | None) -> str:
     )
 
 
+# Per-message prompt cap: the wire layer already bounds a message, but truncate here too so
+# even a maxed-out message can't blow up the prompt (6 turns must stay a bounded input).
+_MAX_THREAD_MESSAGE_CHARS = 2_000
+
+
 def _thread_block(thread: list[dict[str, str]]) -> str:
     """Render the last few turns as fenced, clearly-labelled untrusted data."""
-    lines = [f"{t.get('role', '?')}: {t.get('text', '')}" for t in thread[-6:]]
+    lines = [
+        f"{t.get('role', '?')}: {t.get('text', '')[:_MAX_THREAD_MESSAGE_CHARS]}"
+        for t in thread[-6:]
+    ]
     return "<thread>\n" + "\n".join(lines) + "\n</thread>"
 
 

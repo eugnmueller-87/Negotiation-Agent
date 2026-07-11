@@ -20,6 +20,15 @@ from pydantic import BaseModel, Field
 from negotiation_agent.brief import MoveBrief
 from negotiation_agent.research import SupplierBrief
 
+# Bounds on untrusted request strings. Every free-text field is an injection/DoS surface:
+# it can reach the regex extractor, the ~233-signal category classifier, or the LLM prompt.
+# A supplier message is a paragraph; a contract body is bounded by the same 2 MB the intake
+# extractor caps at; the transcript can't exceed the mandate's max_rounds + the anchor.
+_MAX_MESSAGE_CHARS = 20_000  # one supplier/buyer message
+_MAX_CONTRACT_CHARS = 2_000_000  # a pasted contract body (matches intake's cap)
+_MAX_LABEL_CHARS = 200  # a name, category hint, signature
+_MAX_TRANSCRIPT_TURNS = 128  # > any sane max_rounds; the fold input is bounded by this
+
 # ---- The signed mandate (round-tripped verbatim every step) -------------------
 
 
@@ -28,9 +37,12 @@ class MandateConfig(BaseModel):
 
     model_config = {"frozen": True}
 
-    max_rounds: int = Field(default=6, ge=1)
-    beta: float = Field(default=2.5, ge=1.0)
-    stall_rounds: int = Field(default=3, ge=1)
+    # Upper bounds: the mandate is client-authored, and the stateless fold replays decide()
+    # over the whole transcript each step (O(n) per request). Without a ceiling a client
+    # could sign max_rounds=10**7 and drive minutes of CPU per request — bound it here.
+    max_rounds: int = Field(default=6, ge=1, le=64)
+    beta: float = Field(default=2.5, ge=1.0, le=100.0)
+    stall_rounds: int = Field(default=3, ge=1, le=64)
     on_unknown_terms: Literal["escalate", "ignore"] = "escalate"
 
 
@@ -78,7 +90,7 @@ class SupplierTurn(BaseModel):
     model_config = {"frozen": True}
 
     terms: dict[str, float]
-    raw_text: str = ""
+    raw_text: str = Field(default="", max_length=_MAX_MESSAGE_CHARS)
 
 
 class Transcript(BaseModel):
@@ -86,7 +98,7 @@ class Transcript(BaseModel):
 
     model_config = {"frozen": True}
 
-    turns: list[SupplierTurn] = Field(default_factory=list)
+    turns: list[SupplierTurn] = Field(default_factory=list, max_length=_MAX_TRANSCRIPT_TURNS)
 
 
 # ---- Requests -----------------------------------------------------------------
@@ -96,7 +108,7 @@ class SupplierInput(BaseModel):
     model_config = {"frozen": True}
 
     mode: Literal["bot", "human"] = "bot"
-    raw_text: str = ""
+    raw_text: str = Field(default="", max_length=_MAX_MESSAGE_CHARS)
     persona: Literal["cooperative", "aggressive", "evasive"] = "aggressive"
 
 
@@ -104,7 +116,7 @@ class BuyerInput(BaseModel):
     model_config = {"frozen": True}
 
     mode: Literal["human"] = "human"
-    raw_text: str
+    raw_text: str = Field(max_length=_MAX_MESSAGE_CHARS)
 
 
 class Correspondents(BaseModel):
@@ -117,9 +129,9 @@ class Correspondents(BaseModel):
 
     model_config = {"frozen": True}
 
-    supplier_name: str = ""
-    supplier_contact: str = ""  # a named person, e.g. "Mr. Schmidt" / "Ms. Rossi"
-    buyer_signature: str = "Procurement Team"
+    supplier_name: str = Field(default="", max_length=_MAX_LABEL_CHARS)
+    supplier_contact: str = Field(default="", max_length=_MAX_LABEL_CHARS)  # "Mr. Schmidt"
+    buyer_signature: str = Field(default="Procurement Team", max_length=_MAX_LABEL_CHARS)
 
 
 class NegotiationContext(BaseModel):
@@ -129,8 +141,9 @@ class NegotiationContext(BaseModel):
 
     model_config = {"frozen": True}
 
-    contract_text: str = ""
-    category_hint: str = ""  # the setup form's free-text category label, if any
+    # capped: this text is re-scanned by the ~233-signal category classifier every step
+    contract_text: str = Field(default="", max_length=_MAX_CONTRACT_CHARS)
+    category_hint: str = Field(default="", max_length=_MAX_LABEL_CHARS)
 
 
 class OpenRequest(BaseModel):
