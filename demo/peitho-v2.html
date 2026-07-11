@@ -123,6 +123,12 @@
   .intel-hd b{font-size:15px;display:block;} .intel-hd span{font-size:12.5px;color:var(--ink-3);line-height:1.5;display:block;margin-top:2px;}
   .intel-ta{width:100%;min-height:90px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);
     color:var(--ink);font-family:var(--mono);font-size:12.5px;padding:10px 12px;resize:vertical;line-height:1.5;}
+  .intel-drop{margin-bottom:10px;border:1.5px dashed var(--line);border-radius:10px;background:var(--surface-2);
+    padding:14px 16px;display:flex;align-items:center;gap:11px;cursor:pointer;transition:border-color .15s,background .15s;}
+  .intel-drop:hover,.intel-drop.over{border-color:var(--buyer);background:var(--surface);}
+  .intel-drop svg{color:var(--buyer);flex:none;}
+  .intel-drop .dz-main{font-size:13px;color:var(--ink);} .intel-drop .dz-sub{font-size:11.5px;color:var(--ink-3);display:block;margin-top:2px;}
+  .intel-drop .dz-file{font-family:var(--mono);font-size:11.5px;color:var(--buyer);}
   .intel-row{display:flex;align-items:center;gap:11px;margin-top:11px;flex-wrap:wrap;}
   .intel-research{font-size:12px;color:var(--ink-2);display:inline-flex;align-items:center;gap:6px;cursor:pointer;}
   .intel-err{color:var(--crit);font-size:12.5px;}
@@ -411,8 +417,10 @@ const M = {
   },
   session:null, signed:null, transcript:[], thread:[], turns:[],
   tab:"buyer", busy:false, status:"live", terminal:false, error:null, convergence:[],
-  // contract intelligence
-  intel:{ open:false, busy:false, text:"", result:null, accepted:{}, error:null, applied:false },
+  // contract intelligence — `filename` is the uploaded file's name (display only)
+  intel:{ open:false, busy:false, text:"", filename:"", result:null, accepted:{}, error:null, applied:false },
+  // setup fields the human has hand-edited — auto-fill from a contract must never clobber these
+  touched:new Set(),
 };
 
 // Every negotiable term the demo can put on the table. `weightKey` maps to M.form.
@@ -588,9 +596,16 @@ Category: Corrugated packaging
     <div class="intel-hd">
       <svg width="17" height="17" style="color:var(--buyer)"><use href="#i-seal"/></svg>
       <div><b>Walk in prepared</b>
-        <span>Paste the current/expiring contract — the agent extracts the deal, researches the supplier, and proposes how the intelligence should shape your mandate. You approve every change.</span></div>
+        <span>Upload or paste the current/expiring contract — the agent extracts the deal, auto-fills the provider, researches the supplier, and proposes how the intelligence should shape your mandate. You approve every change.</span></div>
     </div>
-    <textarea class="intel-ta" id="intelText" placeholder="Paste contract text…">${esc(it.text)}</textarea>
+    <label class="intel-drop${it.busy?" over":""}" id="intelDrop">
+      <svg width="20" height="20"><use href="#i-seal"/></svg>
+      <div>${it.filename
+        ? `<span class="dz-main">Loaded <span class="dz-file">${esc(it.filename)}</span></span><span class="dz-sub">click or drop another file to replace it</span>`
+        : `<span class="dz-main">Drop a contract file here, or click to choose</span><span class="dz-sub">plain-text .txt · .md · .csv — for PDF/DOCX, paste the text below</span>`}</div>
+      <input type="file" id="intelFile" accept=".txt,.md,.markdown,.csv,.text,text/plain" hidden>
+    </label>
+    <textarea class="intel-ta" id="intelText" placeholder="…or paste contract text here">${esc(it.text)}</textarea>
     <div class="intel-row">
       <button class="btn primary" id="intelReadBtn" ${it.busy?"disabled":""}>${it.busy?'<span class="spin"></span> Reading…':'📄 Read the contract'}</button>
       <button class="btn ghost" id="intelSampleBtn">load a sample</button>
@@ -707,7 +722,7 @@ function field(label,note,input){
 }
 function bindSetup(){
   ["supplier","category","supplierContact","buyerSignature","target","floor","paymentLever","contractMax","supplierOpen"].forEach(k=>{
-    const el=$("#f-"+k); if(el) el.oninput=()=>{ M.form[k]= el.type==="number"?+el.value:el.value; };
+    const el=$("#f-"+k); if(el) el.oninput=()=>{ M.form[k]= el.type==="number"?+el.value:el.value; M.touched.add(k); };
   });
   app.querySelectorAll(".persona").forEach(b=>b.onclick=()=>{ M.form.persona=b.dataset.p; render(); });
   // emphasis sliders — live-update the % readout without a full re-render (keeps focus)
@@ -729,17 +744,51 @@ function bindSetup(){
 }
 
 function bindIntel(){
-  const ta=$("#intelText"); if(ta) ta.oninput=()=>{ M.intel.text=ta.value; };
-  const sb=$("#intelSampleBtn"); if(sb) sb.onclick=()=>{ M.intel.text=$("#intelSample").value; render(); };
+  const ta=$("#intelText"); if(ta) ta.oninput=()=>{ M.intel.text=ta.value; M.intel.filename=""; };
+  const sb=$("#intelSampleBtn"); if(sb) sb.onclick=()=>{ M.intel.text=$("#intelSample").value; M.intel.filename=""; render(); };
   const rb=$("#intelReadBtn"); if(rb) rb.onclick=readContract;
+  // upload: file picker + drag-drop, both feed the same readFileIntoIntel path
+  const fi=$("#intelFile"); if(fi) fi.onchange=e=>{ const f=e.target.files&&e.target.files[0]; if(f) readFileIntoIntel(f); };
+  const dz=$("#intelDrop");
+  if(dz){
+    const stop=e=>{ e.preventDefault(); e.stopPropagation(); };
+    dz.addEventListener("dragover",e=>{ stop(e); dz.classList.add("over"); });
+    dz.addEventListener("dragleave",e=>{ stop(e); dz.classList.remove("over"); });
+    dz.addEventListener("drop",e=>{ stop(e); dz.classList.remove("over"); const f=e.dataTransfer.files&&e.dataTransfer.files[0]; if(f) readFileIntoIntel(f); });
+  }
   // adjustment toggles → re-preview is deferred until "Apply"; just track acceptance
   app.querySelectorAll(".adj-check input").forEach(c=>c.onchange=()=>{ M.intel.accepted[c.dataset.rule]=c.checked; });
   const ab=$("#intelApplyBtn"); if(ab) ab.onclick=applyIntel;
 }
 
+// A dropped/selected file → the intel textarea. Text formats only; binary (PDF/DOCX/zip)
+// is rejected with an honest message rather than fed as garbage to the extractor.
+function readFileIntoIntel(file){
+  const MAX=2*1024*1024; // 2 MB — a contract is text, not a media asset
+  if(file.size>MAX){ M.intel.error=`${file.name} is too large (${(file.size/1048576).toFixed(1)} MB) — max 2 MB of text`; M.intel.filename=""; render(); return; }
+  const name=(file.name||"").toLowerCase();
+  if(/\.(pdf|docx?|xlsx?|pptx?|zip|rtf)$/.test(name)){
+    M.intel.error=`${file.name} is a binary format the demo can't parse — open it and paste the text below`;
+    M.intel.filename=""; render(); return;
+  }
+  const reader=new FileReader();
+  reader.onerror=()=>{ M.intel.error=`couldn't read ${file.name}`; render(); };
+  reader.onload=()=>{
+    const text=String(reader.result||"");
+    // a NUL byte in the first slice means it's binary despite the extension
+    if(/\x00/.test(text.slice(0,4096))){
+      M.intel.error=`${file.name} looks binary, not text — open it and paste the text below`;
+      M.intel.filename=""; render(); return;
+    }
+    M.intel.text=text; M.intel.filename=file.name; M.intel.error=null; M.intel.result=null; M.intel.accepted={};
+    render();
+  };
+  reader.readAsText(file);
+}
+
 async function readContract(){
   const text=(M.intel.text||"").trim();
-  if(!text){ M.intel.error="paste a contract first"; render(); return; }
+  if(!text){ M.intel.error="upload or paste a contract first"; render(); return; }
   M.intel.busy=true; M.intel.error=null; M.intel.result=null; M.intel.accepted={}; render();
   try{
     const research=$("#intelResearch") ? $("#intelResearch").checked : true;
@@ -775,6 +824,10 @@ async function applyIntel(){
 function writeShapedIntoForm(env, r){
   const i=r.intelligence, ext=i.extraction;
   const terms=Object.fromEntries((ext.terms||[]).map(t=>[t.name,t.value]));
+  // negotiate WITH this provider: fill the supplier and their opening price from the
+  // contract, but never clobber a value the human hand-typed (M.touched guards that).
+  if(ext.supplier_name && !M.touched.has("supplier")) M.form.supplier=ext.supplier_name;
+  if(terms.price!=null && !M.touched.has("supplierOpen")) M.form.supplierOpen=+terms.price;
   // pre-fill the negotiable numbers from the extracted contract
   if(terms.price!=null){ M.form.target=+terms.price; M.form.floor=Math.round((+terms.price*1.17)*100)/100; }
   if(terms.payment_days!=null) M.form.paymentLever=Math.max(M.form.paymentLever, +terms.payment_days);
