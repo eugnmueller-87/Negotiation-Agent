@@ -132,6 +132,29 @@ def _drafter() -> DraftClient:
 draft_client_factory = _drafter
 
 
+def _full_mode(request: Request) -> bool:
+    """True only when the caller proves the secret ``PEITHO_FULL_TOKEN`` — unlocking the paid
+    LLM/Hades path. DEMO MODE (default) uses the deterministic, network-free path so a public
+    portfolio instance runs the real engine with ZERO spend.
+
+    Fail-closed: if no ``PEITHO_FULL_TOKEN`` is configured, EVERY request is demo mode — the
+    public URL cannot spend even though the API keys are present on the box. Constant-time
+    compare, same pattern as the god-view gate."""
+    token = os.getenv("PEITHO_FULL_TOKEN", "")
+    if not token:
+        return False
+    return hmac.compare_digest(request.headers.get("X-Peitho-Full", ""), token)
+
+
+def _drafter_for(request: Request) -> DraftClient:
+    """The drafter for this request: the real (paid) client in full mode, else the deterministic
+    templated drafter that makes no network call. This is the single seam that decides whether a
+    request can spend on the buyer message."""
+    from negotiation_agent.fallback import DeterministicDrafter
+
+    return draft_client_factory() if _full_mode(request) else DeterministicDrafter()
+
+
 def _secret() -> str:
     secret = os.getenv("PEITHO_MANDATE_SECRET", "")
     if not secret:
@@ -220,13 +243,15 @@ def prepare(req: PrepareRequest, request: Request) -> PreparedNegotiation | JSON
     gate = _rate_gate(request, "prepare", limit=_RESEARCH_RATE_PER_MIN)
     if gate is not None:
         return gate
+    # Demo mode never calls paid Hades — the extraction still returns, research is just off.
+    do_research = req.research and _full_mode(request)
     researcher: HadesClient | None = None
-    if req.research:
+    if do_research:
         try:
             researcher = HadesClient()
         except ResearchUnavailable as e:
             logger.warning("supplier research unavailable at /prepare: %s", e)
-    return prepare_negotiation(req.contract_text, researcher=researcher, research=req.research)
+    return prepare_negotiation(req.contract_text, researcher=researcher, research=do_research)
 
 
 # A PDF/DOCX upload is bulky (images) even though its text is small; cap the file at
@@ -314,7 +339,12 @@ def intel(req: IntelRequest, request: Request) -> JSONResponse:
 
     brief = None
     note = None
-    if req.research:
+    # Demo mode never calls the paid Hades API — the contract extraction (free regex) still
+    # runs, only the supplier due-diligence is off. Full mode (token) enables live research.
+    do_research = req.research and _full_mode(request)
+    if req.research and not _full_mode(request):
+        note = "Supplier research is available in the full version only."
+    if do_research:
         try:
             brief = HadesClient().investigate(_supplier_from_text(req.contract_text))
         except ResearchUnavailable as e:
@@ -509,7 +539,7 @@ def negotiate_open(req: OpenRequest, request: Request) -> JSONResponse:
     corr = _correspondents_dict(req.correspondents, register)
     try:
         message, audit = draft_and_guard(
-            draft_client_factory(), brief, decision.approved_numbers, [], corr, category
+            _drafter_for(request), brief, decision.approved_numbers, [], corr, category
         )
     except Exception:  # noqa: BLE001 - degrade to fallback, never leak the LLM error to the client
         # Log it: a persistent fallback (rotated key, retired model) must not be invisible.
@@ -613,7 +643,7 @@ def negotiate_step(req: StepRequest, request: Request) -> JSONResponse:
         )
         try:
             message, audit = draft_and_guard(
-                draft_client_factory(), brief, approved, _thread(req), corr, category
+                _drafter_for(request), brief, approved, _thread(req), corr, category
             )
         except Exception:  # noqa: BLE001 - degrade to fallback, never a 500 from the LLM
             logger.exception("buyer draft failed at /negotiate/step; using deterministic fallback")
@@ -656,11 +686,13 @@ def negotiate_step(req: StepRequest, request: Request) -> JSONResponse:
 
 @app.get("/health")
 def health(request: Request) -> dict[str, object]:
-    """Liveness. Anonymous callers get only ``{"status": "ok"}``; the diagnostic detail
-    (model IDs, KB size, config flags — fingerprinting aids) is released only under the same
-    god-view token that gates buyer internals (audit #12)."""
+    """Liveness + the effective mode for this caller (demo vs full). Anonymous callers get
+    only ``{"status", "mode"}``; the diagnostic detail (model IDs, KB size — fingerprinting
+    aids) is released only under the god-view token (audit #12). ``mode`` is not sensitive —
+    it just tells the UI whether to show the honest "templated, no AI" banner."""
+    mode = "full" if _full_mode(request) else "demo"
     if not _godview(request):
-        return {"status": "ok"}
+        return {"status": "ok", "mode": mode}
 
     from negotiation_agent.knowledge.retrieve import _load_index
     from negotiation_agent.llm import BUYER_MODEL, SUPPLIER_MODEL
@@ -668,6 +700,7 @@ def health(request: Request) -> dict[str, object]:
     kb = _load_index()
     return {
         "status": "ok",
+        "mode": mode,
         "buyer_model": BUYER_MODEL,
         "supplier_model": SUPPLIER_MODEL,
         "mandate_configured": bool(os.getenv("PEITHO_MANDATE_SECRET")),

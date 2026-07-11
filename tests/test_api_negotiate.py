@@ -340,11 +340,12 @@ def test_security_headers_present_on_responses(client):
 
 
 def test_health_is_minimal_for_anonymous_callers(client):
-    # audit #12: anonymous /health returns only liveness — no model IDs / KB size to fingerprint
+    # audit #12: anonymous /health returns only liveness + the (non-sensitive) mode —
+    # no model IDs / KB size to fingerprint
     r = client.get("/health")
     assert r.status_code == 200
     body = r.json()
-    assert body == {"status": "ok"}
+    assert body == {"status": "ok", "mode": "demo"}
     assert "buyer_model" not in body
 
 

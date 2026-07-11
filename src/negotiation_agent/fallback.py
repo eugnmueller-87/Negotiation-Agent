@@ -120,3 +120,31 @@ def build_redraft_instruction(violations: list[str], approved: dict[str, float])
         "Rewrite the message keeping the same intent and trade framing, using only the "
         "permitted figures."
     )
+
+
+class DeterministicDrafter:
+    """A zero-cost, network-free drafter satisfying the ``DraftClient`` protocol structurally.
+
+    This is what powers the PUBLIC demo (``PEITHO_FULL_TOKEN`` absent): the real deterministic
+    engine still decides every move, but the buyer's message is a template from
+    :func:`render_fallback` rather than an Opus draft — so a public portfolio instance runs the
+    genuine negotiation with **zero LLM/API spend**. It makes NO network calls by construction;
+    that is the security invariant the demo mode rests on. Duck-typed against ``DraftClient`` so
+    it drops into ``draft_and_guard`` with no branching (the guard still runs over its output).
+    """
+
+    def draft_buyer(
+        self,
+        brief: MoveBrief,
+        thread: list[dict[str, str]],
+        advice: list[str] | None = None,
+        correspondents: dict[str, str] | None = None,
+    ) -> str:
+        return wrap_letter(render_fallback(brief), correspondents)
+
+    def draft_supplier(
+        self, persona: str, thread: list[dict[str, str]], company: str, category: str
+    ) -> str:
+        # The browser scripts the supplier in the demo, so this is a protocol-completeness
+        # stub; keep it deterministic and figure-free rather than reaching for a model.
+        return "Understood — let me review that and come back to you."

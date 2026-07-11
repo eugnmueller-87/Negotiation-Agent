@@ -71,6 +71,7 @@
   .setup h1{font-size:31px;line-height:1.12;margin:12px 0 14px;}
   .lede{font-size:16px;color:var(--ink-2);line-height:1.55;max-width:60ch;}
   .lede b{color:var(--ink);font-weight:600;}
+  .lede-mode{display:block;margin-top:8px;font-size:13px;color:var(--warn);font-family:var(--mono);}
   .modenote{display:inline-flex;align-items:center;gap:8px;font-family:var(--mono);font-size:11.5px;
     color:var(--ink-3);margin-top:16px;padding:6px 11px;border:1px solid var(--line);border-radius:8px;background:var(--surface);}
   .modenote .dot{width:7px;height:7px;border-radius:50%;background:var(--warn);}
@@ -450,9 +451,20 @@ function godviewToken(){
   const m = (location.hash||"").match(/(?:^|[#&])gv=([^&]+)/);
   return m ? decodeURIComponent(m[1]) : "";
 }
+// FULL mode (Opus writes the buyer prose, Haiku plays supplier, live Hades research) is
+// unlocked only by the server-side PEITHO_FULL_TOKEN, passed in the URL fragment:
+// peitho-v2.html#full=<token>. Without it the public/portfolio version runs the real engine
+// with TEMPLATED messages and no research — genuinely interactive, and $0 to run.
+function fullToken(){
+  const m = (location.hash||"").match(/(?:^|[#&])full=([^&]+)/);
+  return m ? decodeURIComponent(m[1]) : "";
+}
+function authHeaders(){
+  return {"X-Peitho-Godview":godviewToken(), "X-Peitho-Full":fullToken()};
+}
 async function post(path, body){
   const r = await fetch(API+path, {
-    method:"POST", headers:{"Content-Type":"application/json","X-Peitho-Godview":godviewToken()},
+    method:"POST", headers:{"Content-Type":"application/json", ...authHeaders()},
     body:JSON.stringify(body),
   });
   const data = await r.json().catch(()=>({error:{code:"bad_response",message:"unreadable response"}}));
@@ -565,8 +577,9 @@ function setupView(){
     <h1>The model advises. The engine decides.</h1>
     <p class="lede">A real procurement negotiation runs on the server: a deterministic engine
       makes every accept / counter / walk-away call and fixes the exact figures a reply may state.
-      A language model writes the emails — and <b>cannot state a number the engine didn't approve</b>.
-      You watch it happen, including the moment the guard rejects a draft.</p>
+      The message layer — <b>whether templated or written by a language model</b> — <b>cannot state a
+      number the engine didn't approve</b>. You watch it happen, including the moment the guard
+      rejects a draft. <span class="lede-mode" id="ledeMode"></span></p>
     <div class="modenote" id="modenote"><span class="dot"></span><span id="modenoteText">checking backend…</span></div>
 
     ${sectionIntel()}
@@ -808,7 +821,7 @@ async function extractFileServerSide(file){
   M.intel.busy=true; M.intel.error=null; M.intel.result=null; M.intel.filename=""; render();
   try{
     const fd=new FormData(); fd.append("file", file, file.name);
-    const r=await fetch(API+"/extract-text", {method:"POST", headers:{"X-Peitho-Godview":godviewToken()}, body:fd});
+    const r=await fetch(API+"/extract-text", {method:"POST", headers:authHeaders(), body:fd});
     const data=await r.json().catch(()=>({error:{code:"bad_response",message:"unreadable response"}}));
     if(!r.ok) throw new Error(data?.error?.message||"couldn't read the file");
     M.intel.text=data.text||""; M.intel.filename=file.name; M.intel.accepted={};
@@ -1238,14 +1251,24 @@ async function autoplay(){
 /* ── health ── */
 async function refreshHealth(){
   try{
-    const r = await fetch(API+"/health"); const h = await r.json();
-    const live = r.ok && h.mandate_configured;
-    setHealth(live, live ? `live · ${h.buyer_model} buyer / ${h.supplier_model} supplier` : "backend reachable, not configured");
-  }catch(e){ setHealth(false, "backend unreachable — start it or check the URL"); }
+    const r = await fetch(API+"/health", {headers:authHeaders()}); const h = await r.json();
+    const reachable = r.ok && h.status === "ok";
+    // `mode` is server-authoritative: "full" only if a valid PEITHO_FULL_TOKEN was presented.
+    const full = h.mode === "full";
+    setHealth(reachable, full, reachable
+      ? (full
+          ? `full version · ${h.buyer_model||"Opus"} buyer / ${h.supplier_model||"Haiku"} supplier · live research`
+          : "demo · real engine, templated messages — no AI phrasing or live research ($0)")
+      : "backend unreachable");
+  }catch(e){ setHealth(false, false, "backend unreachable — start it or check the URL"); }
 }
-function setHealth(live, text){
-  const hs=$("#hstat"); if(hs){ hs.className="hstat"+(live?" live":""); $("#hstatText").textContent = live?"live":"offline"; }
-  const mn=$("#modenote"); if(mn){ mn.className="modenote"+(live?" live":""); $("#modenoteText").textContent = text; }
+function setHealth(reachable, full, text){
+  const hs=$("#hstat");
+  if(hs){ hs.className="hstat"+(reachable?" live":""); $("#hstatText").textContent = reachable?(full?"full":"demo"):"offline"; }
+  const mn=$("#modenote");
+  if(mn){ mn.className="modenote"+(reachable?" live":""); $("#modenoteText").textContent = text; }
+  const lm=$("#ledeMode");
+  if(lm) lm.textContent = reachable && !full ? "Running the free demo — messages are templated, not AI-written." : "";
 }
 
 render();
