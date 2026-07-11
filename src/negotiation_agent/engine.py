@@ -150,9 +150,14 @@ class DealEngine:
         best_u = max(state.best_incoming_utility, u_in)
 
         # --- Stall tracking: deterministic suppliers repeat exactly. ---
+        # Only escalate a stall for an offer that does NOT clear the current threshold. A
+        # supplier who holds firm at an acceptable offer while the Boulware curve decays to
+        # meet it should be ACCEPTED, not handed to a human — the accept clause below does
+        # exactly that. Gating on u_in < theta keeps the stall guard from stealing a deal
+        # the engine's own schedule says to take.
         stalled = state.last_incoming is not None and merged.terms == state.last_incoming.terms
         stall_count = state.stall_count + 1 if stalled else 0
-        if stall_count >= self.config.stall_rounds:
+        if stall_count >= self.config.stall_rounds and u_in < theta:
             nxt = state.model_copy(
                 update={
                     "last_incoming": merged,

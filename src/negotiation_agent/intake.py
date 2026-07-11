@@ -83,15 +83,27 @@ _MAX_CONTRACT_CHARS = 2_000_000  # ~2 MB of text
 
 # Term-name → the units/patterns we recognise in a contract. Kept as data so the
 # regex stub and the LLM prompt (v1) share one vocabulary.
+# A well-formed number token: optional thousands groups then an optional decimal tail.
+# Matches 11 · 11.50 · 1.234,56 · 1,234.56 · 40,000 — but not 1.2.3 (that fails _num too).
+_NUM = r"[0-9]{1,3}(?:[.,][0-9]{3})*(?:[.,][0-9]{1,6})?|[0-9]{1,12}(?:[.,][0-9]{1,6})?"
+
 _PRICE_RE = re.compile(
-    r"(?:€|eur\s*)\s*([0-9]{1,12}(?:[.,][0-9]{1,6})?)"
-    r"|([0-9]{1,12}(?:[.,][0-9]{1,6})?)\s*(?:€|eur)(?!\w)",
+    rf"(?:€|eur\s*)\s*({_NUM})|(?<![\d.,])({_NUM})\s*(?:€|eur)(?!\w)",
     re.I,
 )
-_PAYMENT_RE = re.compile(r"\bnet[\s-]?([0-9]{1,3})|([0-9]{1,3})\s*days?\b", re.I)
-_MONTHS_RE = re.compile(r"([0-9]{1,3})\s*(?:month|months|mo)\b", re.I)
-_VOLUME_RE = re.compile(r"([0-9][0-9.,]{1,15})\s*(?:units|pcs|pieces|stück)\b", re.I)
-_REBATE_RE = re.compile(r"([0-9]{1,6}(?:[.,][0-9]{1,4})?)\s*%\s*(?:rebate|discount|rabatt)", re.I)
+# net-N is the authoritative payment term. The bare "N days" fallback requires a payment
+# context word nearby and a leading \b, so "90 days notice" (a termination clause) is not
+# misread as payment_days. net-N is preferred by being the first alternative searched.
+_PAYMENT_RE = re.compile(
+    r"\bnet[\s-]?([0-9]{1,3})\b"
+    r"|\b(?:payment|due|invoice|payable|zahlungsziel|zahlbar)[^.\n]{0,40}?\b([0-9]{1,3})\s*days?\b",
+    re.I,
+)
+_MONTHS_RE = re.compile(r"\b([0-9]{1,3})\s*(?:month|months|mo)\b", re.I)
+# the (?<![\d.,]) stops a match from starting mid-token, so "1.2.3 units" is rejected
+# whole (no spurious "2.3") rather than backtracking into the malformed tail.
+_VOLUME_RE = re.compile(rf"(?<![\d.,])({_NUM})\s*(?:units|pcs|pieces|stück)\b", re.I)
+_REBATE_RE = re.compile(rf"({_NUM})\s*%\s*(?:rebate|discount|rabatt)", re.I)
 _SUPPLIER_RE = re.compile(
     r"(?:supplier|vendor|lieferant|seller)\s*[:\-]?\s*"
     r"([A-Z][\w&.\- ]{2,60}?(?:GmbH|AG|Ltd|Inc|B\.V\.|S\.A\.|SE|KG))",
@@ -100,23 +112,62 @@ _SUPPLIER_RE = re.compile(
 
 
 def _num(m: re.Match[str] | None) -> float | None:
-    """Parse a captured number, handling both decimal and thousands separators.
+    """Parse a captured number, handling European and English separators. Never raises.
 
-    Ambiguity between European decimal comma (``11,50``) and English thousands
-    comma (``40,000``) is resolved by the grouping: a separator followed by
-    exactly three digits and no further separators is treated as thousands;
-    otherwise as a decimal point. Dots are handled symmetrically.
+    Handles the four real forms seen in German/English procurement contracts:
+      - plain              ``11.50`` / ``11,50`` → one separator = the decimal mark
+      - thousands only     ``40,000`` / ``40.000`` → sep + groups of exactly 3, whole
+      - full EU            ``1.234,56`` → dots group thousands, comma is the decimal
+      - full English       ``1,234.56`` → commas group thousands, dot is the decimal
+    When both separators appear, the LAST one is the decimal mark and the others are
+    thousands groups. Anything malformed (``1.2.3``, ``1,000,``) returns ``None`` rather
+    than raising — untrusted contract/supplier text must never 500 the extractor.
     """
     if not m:
         return None
     g = next((x for x in m.groups() if x), None)
     if not g:
         return None
-    # thousands: 40,000 or 40.000 (sep + exactly 3 trailing digits, whole number)
-    raw = g.replace(".", "").replace(",", "") if re.fullmatch(r"\d{1,3}(?:[.,]\d{3})+", g) else None
-    val = float(raw) if raw is not None else float(g.replace(",", "."))
+    normalized = _normalize_number(g)
+    if normalized is None:
+        return None
+    try:
+        val = float(normalized)
+    except ValueError:
+        return None
     # A pathological long digit run can float() to inf; never emit a non-finite value.
     return val if val == val and val not in (float("inf"), float("-inf")) else None
+
+
+def _normalize_number(g: str) -> str | None:
+    """Turn a captured number token into a plain ``float``-parseable string, or ``None``.
+
+    ``None`` for any token that isn't a well-formed number so the caller can treat it as
+    'no match' — the extractor's honest contract (a term with no clean value is absent).
+    """
+    has_dot = "." in g
+    has_comma = "," in g
+    if has_dot and has_comma:
+        # both present: the LAST separator is the decimal, the rest are thousands groups
+        dec = "," if g.rfind(",") > g.rfind(".") else "."
+        thou = "." if dec == "," else ","
+        return g.replace(thou, "").replace(dec, ".")
+    sep = "." if has_dot else "," if has_comma else ""
+    if not sep:
+        return g if g.isdigit() else None
+    parts = g.split(sep)
+    if not all(p.isdigit() for p in parts) or "" in parts:
+        return None  # malformed: "1,000," or "1..2" → no clean value
+    # thousands grouping: 2+ separators, first group 1–3 digits, every later group exactly 3
+    if len(parts) > 2 and len(parts[0]) <= 3 and all(len(p) == 3 for p in parts[1:]):
+        return "".join(parts)
+    # exactly one separator: sep + exactly 3 trailing digits reads as thousands (40,000);
+    # anything else is a decimal mark (11,50 → 11.5). Matches the documented v0 rule.
+    if len(parts) == 2:
+        if len(parts[0]) <= 3 and len(parts[1]) == 3:
+            return parts[0] + parts[1]
+        return parts[0] + "." + parts[1]
+    return None
 
 
 class RegexContractExtractor:

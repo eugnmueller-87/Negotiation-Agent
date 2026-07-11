@@ -94,6 +94,19 @@ class TermSpec(BaseModel):
         lo, hi = sorted((self.best, self.worst))
         return min(hi, max(lo, x))
 
+    def clamp_worst_only(self, x: float) -> float:
+        """Clamp only past the ``worst`` end; a better-than-``best`` value is kept as-is.
+
+        A supplier offering better than the buyer's aspiration point (``best``) is a real
+        concession — pulling it back to ``best`` would record and confirm a WORSE deal than
+        was actually offered (a fabricated number). Scoring already saturates at utility 1.0
+        beyond ``best`` (see :func:`value.linear_value`), so keeping the true value costs no
+        scoring safety. Only a value past ``worst`` (a stray/nonsense parse) is clamped in.
+        """
+        if self.best <= self.worst:  # MINIMIZE: lower is better; worst is the HIGH bound
+            return min(self.worst, x)
+        return max(self.worst, x)  # MAXIMIZE: higher is better; worst is the LOW bound
+
 
 class Offer(BaseModel):
     """A concrete package: one value per envelope term, keyed by term name.

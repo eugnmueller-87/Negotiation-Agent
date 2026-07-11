@@ -190,8 +190,16 @@ def draft_and_guard(
             *thread,
             {"role": "system", "text": build_redraft_instruction(violations, approved)},
         ]
+    # The fallback passes by construction, but RUN the guard anyway (defense in depth) and
+    # record the REAL result — never a fabricated ok=True. A salutation built from a
+    # digit-bearing correspondent field ("Team 24/7") would otherwise ship an unapproved
+    # figure under a clean-looking audit; wrap_letter strips digits from those fields, and
+    # this check is the honest backstop that proves it.
     safe = wrap_letter(render_fallback(brief, variant=len(attempts)), correspondents)
-    attempts.append(GuardAttempt(draft=safe, ok=True, violations=[]))
+    fallback_violations = check(safe, approved)
+    attempts.append(
+        GuardAttempt(draft=safe, ok=not fallback_violations, violations=fallback_violations)
+    )
     return safe, GuardAudit(released_by="fallback", attempts=attempts)
 
 
@@ -210,8 +218,12 @@ def resolve_supplier_offer(
         return None
     base = dict(prev_offer.terms) if prev_offer else {}
     base.update(found)
-    # clamp every term into its scored span so a stray parse can't leave the envelope
-    clamped = {n: envelope.term_map[n].clamp(base[n]) for n in envelope.term_map if n in base}
+    # Clamp only past the WORST end — a stray/nonsense parse can't leave the envelope, but a
+    # supplier offering BETTER than the buyer's aspiration (best) keeps that true value rather
+    # than being rewritten to a worse number the buyer would then confirm (audit issue #7).
+    clamped = {
+        n: envelope.term_map[n].clamp_worst_only(base[n]) for n in envelope.term_map if n in base
+    }
     if set(clamped) != set(envelope.term_map):
         return None
     return Offer(terms=clamped)

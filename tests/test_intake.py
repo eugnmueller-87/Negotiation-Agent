@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from negotiation_agent.intake import (
     ContractExtraction,
     ExtractedTerm,
@@ -144,3 +146,66 @@ def test_overlong_digit_token_never_infinite():
     m = _re.compile(r"([0-9.,]+)").search("9" * 400)
     v = _num(m)
     assert v is None  # non-finite is dropped, never returned as inf
+
+
+def _value(text: str, name: str) -> float | None:
+    return next((t.value for t in extract_contract(text).terms if t.name == name), None)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "we will ship 1.2.3 units next year",  # malformed multi-separator
+        "deliver 1,000, units",  # trailing separator
+        "quote v1.2.3 units and stop",
+    ],
+)
+def test_malformed_number_never_crashes_extraction(text):
+    # untrusted contract/supplier text with a broken number token must not 500 — it yields
+    # no term for that field, never a ValueError (the extractor's honest no-match contract).
+    ex = extract_contract(text)  # must not raise
+    assert all(t.name != "volume_units" for t in ex.terms)
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("unit price EUR 11.50", 11.50),
+        ("unit price EUR 11,50", 11.50),
+        ("price EUR 1.234,56 per unit", 1234.56),  # full EU format keeps the cents
+        ("price EUR 1.234.567,89", 1234567.89),  # 1000x error was the bug
+        ("price 1,234.56 EUR", 1234.56),  # full English format
+    ],
+)
+def test_eu_and_english_price_formats_keep_magnitude(text, expected):
+    assert _value(text, "price") == expected
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("Supply of 5 units at EUR 100", 5.0),  # single-digit volume was silently dropped
+        ("Minimum annual volume: 40,000 units.", 40000.0),  # thousands still read whole
+    ],
+)
+def test_volume_extraction(text, expected):
+    assert _value(text, "volume_units") == expected
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("Invoices are payable net 30 days.", 30.0),
+        # a termination-notice clause must NOT be misread as payment_days — net-N wins
+        ("Termination requires 90 days notice. Invoices due net 30.", 30.0),
+        ("Payment due within 45 days of invoice.", 45.0),
+    ],
+)
+def test_payment_days_prefers_net_and_ignores_notice_periods(text, expected):
+    assert _value(text, "payment_days") == expected
+
+
+def test_bare_notice_period_is_not_a_payment_term():
+    # "90 days notice" with no payment context anywhere -> payment_days absent, not 90
+    ex = extract_contract("Either party may give 90 days notice of termination.")
+    assert all(t.name != "payment_days" for t in ex.terms)

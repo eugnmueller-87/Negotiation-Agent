@@ -95,9 +95,15 @@ def wrap_letter(body: str, correspondents: dict[str, str] | None) -> str:
         return body
     from negotiation_agent.knowledge.tone import Register, greeting_for
 
-    contact = correspondents.get("supplier_contact", "").strip()
-    supplier = correspondents.get("supplier_name", "").strip()
-    signature = correspondents.get("buyer_signature", "").strip() or "Procurement Team"
+    # A salutation/sign-off names people — it must never carry a figure. Strip digits from
+    # the correspondent fields so a value slipped into a name ("Team 24/7") can't reach the
+    # message as an unapproved number (audit issue #11). Names don't contain digits.
+    def _no_digits(s: str) -> str:
+        return "".join(c for c in s if not c.isdigit()).strip()
+
+    contact = _no_digits(correspondents.get("supplier_contact", ""))
+    supplier = _no_digits(correspondents.get("supplier_name", ""))
+    signature = _no_digits(correspondents.get("buyer_signature", "")) or "Procurement Team"
     register: Register = "informal" if correspondents.get("register") == "informal" else "formal"
     greeting = greeting_for(register, contact=contact, supplier=supplier)
     return f"{greeting}\n\n{body}\n\nBest regards,\n{signature}"

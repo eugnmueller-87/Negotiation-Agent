@@ -100,6 +100,22 @@ def test_stall_escalates(simple_envelope):
     assert decision.reason == "supplier_stalled"
 
 
+def test_firm_but_acceptable_offer_is_accepted_not_stalled(simple_envelope):
+    # A supplier who holds FIRM (repeats) at an offer that clears the decaying threshold must
+    # be ACCEPTED, not escalated as a stall (audit issue #6). Before the fix, the stall guard
+    # fired first and threw this closable deal to a human.
+    eng = _engine(simple_envelope, max_rounds=8, beta=2.0, stall_rounds=3)
+    _, state = eng.decide(NegotiationState(), incoming=None)
+    firm = Offer(terms={"price": 9.2, "rebate_pct": 7.0})  # u ~ 0.92, held firm every round
+    decision = None
+    for _ in range(8):
+        decision, state = eng.decide(state, firm)
+        if decision.outcome is not Outcome.COUNTER:
+            break
+    assert decision.outcome is Outcome.ACCEPT
+    assert decision.reason == "accept_threshold"
+
+
 def test_deadline_escalates_without_deal(simple_envelope):
     eng = _engine(simple_envelope, max_rounds=3, stall_rounds=99)
     state = NegotiationState()

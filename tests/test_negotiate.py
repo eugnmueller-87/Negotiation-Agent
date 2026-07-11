@@ -134,6 +134,23 @@ def test_unfixable_draft_falls_back_to_template():
     assert audit.attempts[-1].ok is True
 
 
+def test_fallback_strips_digits_from_correspondent_fields():
+    # a digit-bearing correspondent ("Team 24/7") must not smuggle an unapproved figure into
+    # the salutation/sign-off; wrap_letter strips digits and the fallback guard verifies it
+    # for real (audit issue #11) — the recorded ok reflects an ACTUAL check, not a fabricated True.
+    # approved has no figure containing "247" or "88", so if those survived they'd be a violation.
+    approved = {"price": 96.0, "payment_days": 45, "contract_months": 16}
+    corr = {"supplier_name": "Team 247 GmbH", "buyer_signature": "Desk 88"}
+    msg, audit = draft_and_guard(_AlwaysCheatingDrafter(), _brief(approved), approved, [], corr)
+    assert audit.released_by == "fallback"
+    # the salutation/sign-off name the parties with digits stripped — no "247" / "88" survive
+    salutation_and_signoff = msg.split("\n\n")[0] + msg.split("\n\n")[-1]
+    assert "247" not in salutation_and_signoff
+    assert "88" not in salutation_and_signoff
+    assert audit.attempts[-1].ok is True  # the REAL check passed (not a hardcoded True)
+    assert audit.attempts[-1].violations == []
+
+
 def test_fallback_letter_carries_greeting_and_signoff():
     # a fallback message is still a proper letter when correspondents are supplied
     approved = {"price": 96.0, "payment_days": 45, "contract_months": 16}
@@ -258,9 +275,20 @@ def test_resolve_supplier_offer_inherits_standing_offer():
     assert offer.terms["payment_days"] == 30.0  # inherited
 
 
-def test_resolve_clamps_out_of_range_parse():
+def test_resolve_keeps_better_than_best_offer():
     env = _env()
-    # a price far below the envelope span clamps to best, never escapes the envelope
+    # a price BELOW best (92) is better than the buyer's aspiration — a real concession that
+    # must be recorded at its true value, not rewritten up to 92 (audit issue #7). Scoring
+    # already saturates at utility 1.0, so keeping the true €10 costs no safety.
     offer = resolve_supplier_offer(env, "We'll do €10.00 per unit, net-45, 18 months.", None)
     assert offer is not None
-    assert offer.terms["price"] == 92.0  # clamped to best (92)
+    assert offer.terms["price"] == 10.0  # kept, not clamped up to best
+
+
+def test_resolve_clamps_worse_than_worst_parse():
+    env = _env()
+    # a price ABOVE worst (108) is a stray/nonsense parse — clamped in to the worst bound so
+    # it never leaves the envelope span on the losing side.
+    offer = resolve_supplier_offer(env, "We'll do €200.00 per unit, net-45, 18 months.", None)
+    assert offer is not None
+    assert offer.terms["price"] == 108.0  # clamped to worst (108)
