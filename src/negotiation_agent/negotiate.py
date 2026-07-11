@@ -12,6 +12,8 @@ and re-derives the negotiation by folding ``decide`` over the transcript each ca
 
 from __future__ import annotations
 
+from functools import lru_cache
+
 from negotiation_agent.brief import MoveBrief, build_move_brief
 from negotiation_agent.engine import (
     DealEngine,
@@ -100,10 +102,20 @@ def _retrieve_hits(brief: MoveBrief, category: str | None = None) -> list[Hit]:
 
     Strategy (Fisher-Ury) is category-agnostic and always pulled general. Category-specific
     levers are pulled scoped to ``category`` when the KB has a playbook for it; otherwise
-    levers fall back to general so the agent still gets *some* concrete lever ideas."""
+    levers fall back to general so the agent still gets *some* concrete lever ideas.
+
+    Retrieval is pure and deterministic given the query, so it's memoised on
+    ``(query, category)`` — a single turn calls this twice (drafting advice + the consulted
+    list), and both must return the same sources anyway. The cache collapses that to one
+    BM25 pass without changing any caller."""
     query = _move_query(brief)
     if query is None:
         return []
+    return list(_retrieve_hits_cached(query, category))
+
+
+@lru_cache(maxsize=256)
+def _retrieve_hits_cached(query: str, category: str | None) -> tuple[Hit, ...]:
     strategy = retrieve(query, tag="negotiation-strategy", top_k=2)
     if category and category != "unknown" and has_category_playbook(category):
         levers = retrieve(query, category=category, top_k=2)
@@ -115,7 +127,7 @@ def _retrieve_hits(brief: MoveBrief, category: str | None = None) -> list[Hit]:
         if hit.source not in seen:
             seen.add(hit.source)
             out.append(hit)
-    return out[:3]
+    return tuple(out[:3])
 
 
 def _advice_line(hit: Hit) -> str:

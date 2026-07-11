@@ -121,11 +121,6 @@ class Offer(BaseModel):
 
     terms: dict[str, float]
 
-    def with_updates(self, **changes: float) -> Offer:
-        merged = dict(self.terms)
-        merged.update(changes)
-        return Offer(terms=merged)
-
 
 class Envelope(BaseModel):
     """Versioned negotiation mandate.

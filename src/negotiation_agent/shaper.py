@@ -32,8 +32,6 @@ from negotiation_agent.envelope import Direction, Envelope, Offer, TermSpec, Ter
 W_COMPLIANCE = 0.10  # weight bump for a compliance-critical term
 W_HEDGE = 0.08  # weight for an added risk-hedge term
 W_GIVE = 0.06  # weight for an added trade-bait ("give") term
-_EXPIRING_SOON_DAYS = 30
-_EXPIRING_FAR_DAYS = 180
 _MIN_WEIGHT = 1e-6  # TermSpec weight is gt=0.0; clamp to this floor before renormalising
 _TARGET_RESERVATION_GAP = 1e-3  # keep reservation strictly below target
 

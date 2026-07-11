@@ -28,34 +28,6 @@ from negotiation_agent.extract_text import (  # noqa: E402
 CONTRACT_LINE = "SUPPLY AGREEMENT. Supplier: Acme GmbH. Unit price EUR 11.50 per unit. Net-30."
 
 
-def _make_pdf(text: str) -> bytes:
-    """A minimal but VALID one-page PDF with a Helvetica font resource and a real text
-    layer — hand-assembled (no reportlab, no pypdf internals) so it's stable across
-    library versions. The /Font resource is what makes the text extractable."""
-    escaped = text.replace("\\", "\\\\").replace("(", r"\(").replace(")", r"\)")
-    content = f"BT /F1 24 Tf 72 720 Td ({escaped}) Tj ET".encode("latin-1")
-    objs = [
-        b"<< /Type /Catalog /Pages 2 0 R >>",
-        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
-        b"/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
-        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
-        b"<< /Length %d >>\nstream\n%s\nendstream" % (len(content), content),
-    ]
-    pdf = b"%PDF-1.4\n"
-    offsets: list[int] = []
-    for i, body in enumerate(objs, start=1):
-        offsets.append(len(pdf))
-        pdf += b"%d 0 obj\n%s\nendobj\n" % (i, body)
-    xref_pos = len(pdf)
-    pdf += b"xref\n0 %d\n0000000000 65535 f \n" % (len(objs) + 1)
-    for off in offsets:
-        pdf += b"%010d 00000 n \n" % off
-    trailer = b"trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF"
-    pdf += trailer % (len(objs) + 1, xref_pos)
-    return pdf
-
-
 def _make_docx(paragraphs: list[str]) -> bytes:
     import docx
 
@@ -68,8 +40,8 @@ def _make_docx(paragraphs: list[str]) -> bytes:
 
 
 # ── PDF ────────────────────────────────────────────────────────────────────────
-def test_extract_pdf_reads_the_text_layer():
-    result = extract_pdf(_make_pdf(CONTRACT_LINE))
+def test_extract_pdf_reads_the_text_layer(make_text_pdf):
+    result = extract_pdf(make_text_pdf(CONTRACT_LINE))
     assert "Acme GmbH" in result.text
     assert "11.50" in result.text
     assert result.truncated is False
@@ -105,8 +77,8 @@ def test_corrupt_docx_raises_corrupt_file():
 
 
 # ── routing / plaintext ──────────────────────────────────────────────────────────
-def test_extract_file_routes_pdf_by_extension():
-    assert "Acme GmbH" in extract_file("contract.pdf", _make_pdf(CONTRACT_LINE)).text
+def test_extract_file_routes_pdf_by_extension(make_text_pdf):
+    assert "Acme GmbH" in extract_file("contract.pdf", make_text_pdf(CONTRACT_LINE)).text
 
 
 def test_extract_file_routes_docx_by_extension():

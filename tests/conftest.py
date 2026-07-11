@@ -2,9 +2,47 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import pytest
 
 from negotiation_agent.envelope import Direction, Envelope, TermSpec, TermType
+
+
+def _build_text_pdf(text: str) -> bytes:
+    """A minimal but VALID one-page PDF with a Helvetica font resource and a real text layer.
+
+    Hand-assembled (no reportlab, no pypdf internals) so it's stable across library versions;
+    the /Font resource is what makes the text extractable. Shared by the extraction tests.
+    """
+    escaped = text.replace("\\", "\\\\").replace("(", r"\(").replace(")", r"\)")
+    content = f"BT /F1 24 Tf 72 720 Td ({escaped}) Tj ET".encode("latin-1")
+    objs = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+        b"/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+        b"<< /Length %d >>\nstream\n%s\nendstream" % (len(content), content),
+    ]
+    pdf = b"%PDF-1.4\n"
+    offsets: list[int] = []
+    for i, body in enumerate(objs, start=1):
+        offsets.append(len(pdf))
+        pdf += b"%d 0 obj\n%s\nendobj\n" % (i, body)
+    xref_pos = len(pdf)
+    pdf += b"xref\n0 %d\n0000000000 65535 f \n" % (len(objs) + 1)
+    for off in offsets:
+        pdf += b"%010d 00000 n \n" % off
+    trailer = b"trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF"
+    pdf += trailer % (len(objs) + 1, xref_pos)
+    return pdf
+
+
+@pytest.fixture
+def make_text_pdf() -> Callable[[str], bytes]:
+    """Return a builder that turns a string into a valid text-layer PDF (bytes)."""
+    return _build_text_pdf
 
 
 @pytest.fixture

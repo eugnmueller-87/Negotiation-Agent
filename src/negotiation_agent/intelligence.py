@@ -133,6 +133,12 @@ class ContractIntelligence(BaseModel):
         return self.extraction.supplier_name
 
 
+# Expiry windows that drive the lifecycle adjustment rules. Named so a single edit re-tunes
+# both the "expiring soon" (lower the floor to close) and "far out" (hold firm) thresholds.
+_EXPIRING_SOON_DAYS = 30
+_EXPIRING_FAR_DAYS = 180
+
+
 # ── the rule engine — pure: findings → proposed adjustments ───────────────────
 def propose_adjustments(
     intel: ContractIntelligence,
@@ -215,7 +221,7 @@ def propose_adjustments(
     life = intel.lifecycle
     if life and life.expiration_date and life.expiration_date.assurance == "confirmed":
         n = days_until(life.expiration_date.value, today=today)
-        if n is not None and 0 <= n < 30:
+        if n is not None and 0 <= n < _EXPIRING_SOON_DAYS:
             adjustments.append(
                 ProposedAdjustment(
                     rule_id="R-EXPIRING-SOON",
@@ -229,7 +235,7 @@ def propose_adjustments(
                     ),
                 )
             )
-        elif n is not None and n > 180:
+        elif n is not None and n > _EXPIRING_FAR_DAYS:
             adjustments.append(
                 ProposedAdjustment(
                     rule_id="R-EXPIRING-FAR",
