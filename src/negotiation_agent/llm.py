@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Protocol
 
 from negotiation_agent.brief import MoveBrief
@@ -81,6 +82,27 @@ class DraftClient(Protocol):
     ) -> str: ...
 
 
+# Fence tags that delimit untrusted-data blocks in the prompt. A field containing one of
+# these (or a leading role marker) could break out of its block and be read as instructions
+# (audit SEC-6). We neutralize the delimiters in every untrusted field before interpolation.
+_FENCE_RE = re.compile(
+    r"</?\s*(?:thread|correspondents|negotiation_playbook|brief|system)\b[^>]*>", re.I
+)
+_ROLE_MARKER_RE = re.compile(r"(?im)^\s*(?:system|assistant|user)\s*:")
+
+
+def _sanitize_untrusted(text: str) -> str:
+    """Neutralize prompt-injection breakout attempts in an untrusted field.
+
+    Strips XML fence tags (``</thread>`` etc.) so a value can't close its data block, and
+    defangs leading ``system:``/``assistant:`` role markers so injected text can't pose as an
+    out-of-band instruction. Content is preserved (delimiters replaced, not the whole field
+    dropped) so a legitimate ``<`` in prose survives readably.
+    """
+    text = _FENCE_RE.sub("[tag]", text)
+    return _ROLE_MARKER_RE.sub("[role]", text)
+
+
 def _correspondents_block(correspondents: dict[str, str] | None) -> str:
     """Render the addressee + signature so the model can greet and sign correctly.
 
@@ -88,9 +110,9 @@ def _correspondents_block(correspondents: dict[str, str] | None) -> str:
     valid greeting even when the caller supplies nothing.
     """
     c = correspondents or {}
-    contact = c.get("supplier_contact", "").strip()
-    supplier = c.get("supplier_name", "").strip()
-    signature = c.get("buyer_signature", "").strip() or "Procurement Team"
+    contact = _sanitize_untrusted(c.get("supplier_contact", "").strip())
+    supplier = _sanitize_untrusted(c.get("supplier_name", "").strip())
+    signature = _sanitize_untrusted(c.get("buyer_signature", "").strip()) or "Procurement Team"
     register = "informal" if c.get("register") == "informal" else "formal"
     return (
         "\n<correspondents>"
@@ -125,9 +147,13 @@ _MAX_THREAD_MESSAGE_CHARS = 2_000
 
 
 def _thread_block(thread: list[dict[str, str]]) -> str:
-    """Render the last few turns as fenced, clearly-labelled untrusted data."""
+    """Render the last few turns as fenced, clearly-labelled untrusted data.
+
+    Each message is sanitized (fence tags + role markers neutralized) so a crafted supplier
+    message can't break out of the <thread> block and pose as an instruction (SEC-6)."""
     lines = [
-        f"{t.get('role', '?')}: {t.get('text', '')[:_MAX_THREAD_MESSAGE_CHARS]}"
+        f"{t.get('role', '?')}: "
+        f"{_sanitize_untrusted(t.get('text', '')[:_MAX_THREAD_MESSAGE_CHARS])}"
         for t in thread[-6:]
     ]
     return "<thread>\n" + "\n".join(lines) + "\n</thread>"
