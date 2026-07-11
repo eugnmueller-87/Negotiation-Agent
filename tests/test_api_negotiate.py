@@ -138,6 +138,25 @@ def test_open_is_rate_limited_per_ip_not_session(client, monkeypatch):
     assert 429 in codes[3:]  # the cap kicks in after the limit
 
 
+def test_rate_limit_not_bypassable_by_spoofed_xff(client, monkeypatch):
+    # audit SEC-4: X-Forwarded-For is append-only; a spoofed LEFTMOST value must not create a
+    # fresh rate bucket. The real client is the rightmost (trusted-proxy) entry, so rotating
+    # the spoofed prefix must still hit the same bucket and get 429'd.
+    monkeypatch.setattr(api, "_RATE_PER_MIN", 3)
+    monkeypatch.setattr(api, "_TRUSTED_PROXIES", 1)
+    api._rate_hits.clear()
+    codes = [
+        client.post(
+            "/negotiate/open",
+            json={"mandate": MANDATE, "session_id": "s1"},
+            # attacker rotates the spoofed prefix; Railway appends the same real IP "9.9.9.9"
+            headers={"X-Forwarded-For": f"{i}.{i}.{i}.{i}, 9.9.9.9"},
+        ).status_code
+        for i in range(6)
+    ]
+    assert 429 in codes  # the rotating prefix did not escape the per-real-IP cap
+
+
 def test_open_rejects_unbounded_max_rounds(client):
     # a client-authored mandate can't sign an enormous max_rounds to blow up the fold CPU —
     # the wire cap (le=64) rejects it at validation (audit issue #16).
@@ -272,26 +291,43 @@ def test_human_buyer_off_mandate_number_is_caught(client):
     assert r.json()["error"]["code"] == "buyer_text_off_mandate"
 
 
-def test_godview_gate_double_locked(client, monkeypatch):
-    signed = _open(client)["signed_mandate"]
-    step = {
+def _godview_step(signed):
+    return {
         "signed_mandate": signed,
         "transcript": {"turns": []},
-        "supplier_input": {
-            "mode": "bot",
-            "raw_text": "€105, net-30, 24 months",
-            "persona": "aggressive",
-        },
+        "supplier_input": {"mode": "bot", "raw_text": "€105, net-30, 24 months"},
         "session_id": "s1",
     }
-    # header alone, no server env -> still redacted
+
+
+def test_godview_needs_the_secret_token_not_a_public_header(client, monkeypatch):
+    # audit SEC-3: the buyer-internal block (reservation floor!) must unlock ONLY on the
+    # server-side secret token, never on a public header any caller can send.
+    signed = _open(client)["signed_mandate"]
+    step = _godview_step(signed)
+    monkeypatch.setenv("PEITHO_GODVIEW_TOKEN", "s3cr3t-token")
+
+    # the old public value "1" must NOT unlock internals any more
     r = client.post("/negotiate/step", json=step, headers={"X-Peitho-Godview": "1"})
     assert r.json()["turn"]["internal"] is None
-    # both header AND env -> internal present
-    monkeypatch.setenv("DEMO_GODVIEW", "1")
-    r = client.post("/negotiate/step", json=step, headers={"X-Peitho-Godview": "1"})
+    # a wrong token stays locked
+    r = client.post("/negotiate/step", json=step, headers={"X-Peitho-Godview": "wrong"})
+    assert r.json()["turn"]["internal"] is None
+    # only the exact secret token unlocks it
+    r = client.post("/negotiate/step", json=step, headers={"X-Peitho-Godview": "s3cr3t-token"})
     assert r.json()["turn"]["internal"] is not None
-    assert "threshold" in r.json()["turn"]["internal"]
+    assert "reservation_utility" in r.json()["turn"]["internal"]
+
+
+def test_godview_fails_closed_with_no_token_configured(client, monkeypatch):
+    # no PEITHO_GODVIEW_TOKEN set → god-view is OFF whatever header arrives (fail-closed),
+    # so an internet-exposed instance with no token can never leak the reservation floor.
+    monkeypatch.delenv("PEITHO_GODVIEW_TOKEN", raising=False)
+    signed = _open(client)["signed_mandate"]
+    r = client.post(
+        "/negotiate/step", json=_godview_step(signed), headers={"X-Peitho-Godview": "1"}
+    )
+    assert r.json()["turn"]["internal"] is None
 
 
 def test_health_reports_models(client):

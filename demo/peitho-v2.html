@@ -443,9 +443,16 @@ const TERM_DEFS = [
 function activeTerms(){ return TERM_DEFS.filter(t => t.always || M.form[t.toggle]); }
 
 /* ── backend calls ── */
+// God-view (the buyer-internal drawer) is unlocked only by the server-side PEITHO_GODVIEW_TOKEN.
+// Pass it in the URL fragment for LOCAL dev: peitho-v2.html#gv=<token>. On the public deploy no
+// token is set, so this header matches nothing and the reservation floor never leaks.
+function godviewToken(){
+  const m = (location.hash||"").match(/(?:^|[#&])gv=([^&]+)/);
+  return m ? decodeURIComponent(m[1]) : "";
+}
 async function post(path, body){
   const r = await fetch(API+path, {
-    method:"POST", headers:{"Content-Type":"application/json","X-Peitho-Godview":"1"},
+    method:"POST", headers:{"Content-Type":"application/json","X-Peitho-Godview":godviewToken()},
     body:JSON.stringify(body),
   });
   const data = await r.json().catch(()=>({error:{code:"bad_response",message:"unreadable response"}}));
@@ -801,7 +808,7 @@ async function extractFileServerSide(file){
   M.intel.busy=true; M.intel.error=null; M.intel.result=null; M.intel.filename=""; render();
   try{
     const fd=new FormData(); fd.append("file", file, file.name);
-    const r=await fetch(API+"/extract-text", {method:"POST", headers:{"X-Peitho-Godview":"1"}, body:fd});
+    const r=await fetch(API+"/extract-text", {method:"POST", headers:{"X-Peitho-Godview":godviewToken()}, body:fd});
     const data=await r.json().catch(()=>({error:{code:"bad_response",message:"unreadable response"}}));
     if(!r.ok) throw new Error(data?.error?.message||"couldn't read the file");
     M.intel.text=data.text||""; M.intel.filename=file.name; M.intel.accepted={};

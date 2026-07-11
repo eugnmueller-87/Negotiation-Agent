@@ -298,5 +298,22 @@ def _bar_fills(decision: EngineDecision, envelope: Envelope) -> dict[str, float]
     }
 
 
-def offers_from_transcript(turns: list[SupplierTurn]) -> list[Offer]:
-    return [Offer(terms=dict(t.terms)) for t in turns]
+def offers_from_transcript(turns: list[SupplierTurn], envelope: Envelope) -> list[Offer]:
+    """Re-derive every prior supplier offer server-side from its ``raw_text``.
+
+    The client's ``SupplierTurn.terms`` is a DISPLAY CACHE and is never trusted for the fold
+    (audit SEC-5): trusting it let a client forge terms the supplier never stated and inherit
+    them into ``approved_numbers``. Instead we re-extract each turn's ``raw_text`` oldest→newest,
+    inheriting unmentioned terms from the prior RE-EXTRACTED offer — exactly how the current
+    turn is resolved. A turn whose text yields no parseable terms (and has no standing offer to
+    inherit from) is dropped rather than fabricated.
+    """
+    offers: list[Offer] = []
+    prev: Offer | None = None
+    for turn in turns:
+        offer = resolve_supplier_offer(envelope, turn.raw_text, prev)
+        if offer is None:
+            continue  # unparseable turn with nothing to inherit — skip, never trust client terms
+        offers.append(offer)
+        prev = offer
+    return offers

@@ -19,6 +19,7 @@ Run locally (after ``pip install -e ".[web]"``)::
 
 from __future__ import annotations
 
+import hmac
 import logging
 import os
 import time
@@ -113,12 +114,31 @@ def _secret() -> str:
     return secret
 
 
+# Number of trusted reverse proxies between the client and this app. X-Forwarded-For is
+# append-only: each proxy APPENDS the peer it saw, so the real client is the entry
+# PEITHO_TRUSTED_PROXIES-from-the-RIGHT. Everything to its left is attacker-supplied and must
+# never be trusted. Railway terminates at one edge proxy → default 1.
+_TRUSTED_PROXIES = max(0, int(os.getenv("PEITHO_TRUSTED_PROXIES", "1")))
+
+
 def _client_ip(request: Request) -> str:
-    """The caller's IP for rate-limit keying. Behind Railway's proxy the real client is the
-    first hop in X-Forwarded-For; fall back to the socket peer. Never a client-chosen value."""
+    """The caller's IP for rate-limit keying — the edge-resolved client, not a spoofable value.
+
+    The old code took the LEFTMOST X-Forwarded-For entry, which is fully client-controlled
+    (an attacker prepends a random IP per request → fresh rate bucket → cap bypassed, audit
+    SEC-4). XFF is append-only, so the trustworthy client is ``_TRUSTED_PROXIES`` entries from
+    the RIGHT: with one trusted proxy (Railway) that's the last entry the proxy itself wrote.
+    Falls back to the socket peer when there is no XFF or it's too short to trust.
+    """
     fwd = request.headers.get("x-forwarded-for", "")
-    if fwd:
-        return fwd.split(",")[0].strip()
+    if fwd and _TRUSTED_PROXIES > 0:
+        parts = [p.strip() for p in fwd.split(",") if p.strip()]
+        # Each trusted proxy appended the peer it saw, so the real client is _TRUSTED_PROXIES
+        # entries from the right. With one proxy (Railway) that's the last entry — the IP the
+        # edge itself wrote — and no attacker-supplied prefix can move it.
+        idx = len(parts) - _TRUSTED_PROXIES
+        if 0 <= idx < len(parts):
+            return parts[idx]
     return request.client.host if request.client else "?"
 
 
@@ -527,8 +547,9 @@ def negotiate_step(req: StepRequest, request: Request) -> JSONResponse:
     if len(req.transcript.turns) > engine.config.max_rounds:
         return _err("transcript_too_long", "transcript exceeds the mandate's round budget", 400)
 
-    # Re-extract the supplier's offer server-side (never trust the client's parse).
-    prior_offers = offers_from_transcript(req.transcript.turns)
+    # Re-extract EVERY prior supplier offer server-side from its raw_text (never trust the
+    # client's terms cache — SEC-5), then the current turn the same way.
+    prior_offers = offers_from_transcript(req.transcript.turns, envelope)
     supplier_text = req.supplier_input.raw_text
     prev_offer = prior_offers[-1] if prior_offers else None
     new_offer = resolve_supplier_offer(envelope, supplier_text, prev_offer)
@@ -648,5 +669,18 @@ def _supplier_view(req: StepRequest, buyer_message: str, supplier_text: str) -> 
 
 
 def _godview(request: Request) -> bool:
-    """The double gate: client header AND server env must both agree."""
-    return request.headers.get("X-Peitho-Godview") == "1" and os.getenv("DEMO_GODVIEW") == "1"
+    """Release the buyer-internal block (threshold, reservation floor, utilities) only to a
+    caller that proves a SERVER-SIDE SECRET — never on a client-controllable header alone.
+
+    The old gate was ``header == "1" AND DEMO_GODVIEW == "1"``; the header is public (the demo
+    hardcodes it), so it collapsed to the env flag and leaked ``reservation_utility`` — the
+    buyer's walk-away floor — to any caller (audit SEC-3). Now the client must send the exact
+    ``PEITHO_GODVIEW_TOKEN`` in the ``X-Peitho-Godview`` header, compared in constant time.
+    Fail-closed: no token configured → god-view is OFF, so an internet-exposed instance with
+    no token set can never release internals, whatever headers arrive.
+    """
+    token = os.getenv("PEITHO_GODVIEW_TOKEN", "")
+    if not token:
+        return False
+    supplied = request.headers.get("X-Peitho-Godview", "")
+    return hmac.compare_digest(supplied, token)

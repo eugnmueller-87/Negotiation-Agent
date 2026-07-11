@@ -15,9 +15,11 @@ from negotiation_agent.negotiate import (
     NegotiationClosed,
     draft_and_guard,
     fold,
+    offers_from_transcript,
     resolve_supplier_offer,
 )
 from negotiation_agent.supplier_model import SupplierModel
+from negotiation_agent.wire import SupplierTurn
 
 
 def _env():
@@ -273,6 +275,33 @@ def test_resolve_supplier_offer_inherits_standing_offer():
     assert offer is not None
     assert offer.terms["price"] == 98.0
     assert offer.terms["payment_days"] == 30.0  # inherited
+
+
+def test_transcript_ignores_forged_client_terms():
+    # audit SEC-5: a client-supplied transcript turn whose `terms` dict claims a favorable
+    # value NOT present in its raw_text must NOT survive — every turn is re-extracted from
+    # raw_text server-side, so the forged payment_days=90 is discarded.
+    env = _env()
+    forged = [
+        SupplierTurn(terms={"price": 95.0, "payment_days": 90.0}, raw_text="95 EUR per unit.")
+    ]
+    offers = offers_from_transcript(forged, env)
+    # the price-only text can't resolve a full offer with nothing to inherit -> no forged offer
+    assert offers == [] or all(o.terms.get("payment_days") != 90.0 for o in offers)
+
+
+def test_transcript_reextracts_and_inherits_from_real_text():
+    # the legitimate multi-turn path: a full first offer, then a partial follow-up that
+    # inherits the unmentioned term from the RE-EXTRACTED prior (never a client dict).
+    env = _env()
+    turns = [
+        SupplierTurn(terms={}, raw_text="We can do 100 EUR per unit, net-45, 18 months."),
+        SupplierTurn(terms={}, raw_text="OK, 98 EUR per unit."),  # inherits net-45, 18 months
+    ]
+    offers = offers_from_transcript(turns, env)
+    assert len(offers) == 2
+    assert offers[0].terms["price"] == 100.0 and offers[0].terms["payment_days"] == 45.0
+    assert offers[1].terms["price"] == 98.0 and offers[1].terms["payment_days"] == 45.0  # inherited
 
 
 def test_resolve_keeps_better_than_best_offer():
