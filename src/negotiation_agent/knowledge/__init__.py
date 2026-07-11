@@ -29,6 +29,7 @@ from negotiation_agent.knowledge.retrieve import (
     retrieve,
 )
 from negotiation_agent.knowledge.tone import Register, detect_register, greeting_for
+from negotiation_agent.knowledge.unspsc import category_from_unspsc
 
 __all__ = [
     "CATEGORY_LABELS",
@@ -40,6 +41,7 @@ __all__ = [
     "ManifestEntry",
     "Register",
     "category_coverage",
+    "category_from_unspsc",
     "detect_category",
     "detect_register",
     "greeting_for",

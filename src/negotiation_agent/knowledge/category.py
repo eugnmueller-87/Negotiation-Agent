@@ -187,13 +187,29 @@ def _score(text: str, terms: dict[str, int]) -> tuple[int, list[str]]:
     return score, hits
 
 
+# A UNSPSC code in the text — "UNSPSC 80111600", "unspsc: 43211500", or a bare 8-digit code
+# alongside the word. Authoritative when present: a spend-system-coded contract beats keywords.
+_UNSPSC_RE = re.compile(r"unspsc\D{0,6}(\d{2,8})", re.IGNORECASE)
+
+
 def detect_category(text: str, *, hint: str | None = None) -> tuple[Category, list[str]]:
     """Classify contract/negotiation text into a procurement category.
 
-    ``hint`` (e.g. the setup form's free-text category) is scored alongside the contract
-    body — it nudges but never overrides a strong contract signal. Returns the category and
-    the matched terms (for a legible, auditable result). ``unknown`` when nothing scores.
+    If the text carries a UNSPSC code (the standard real spend systems assign), that wins —
+    a coded contract is authoritative. Otherwise ``hint`` (e.g. the setup form's free-text
+    category) is scored alongside the contract body; it nudges but never overrides a strong
+    contract signal. Returns the category and the matched terms (legible, auditable).
+    ``unknown`` when nothing scores.
     """
+    # UNSPSC code takes priority — the standards-based path, and the bridge to spend systems.
+    m = _UNSPSC_RE.search(text) or (_UNSPSC_RE.search(hint) if hint else None)
+    if m:
+        from negotiation_agent.knowledge.unspsc import category_from_unspsc
+
+        mapped = category_from_unspsc(m.group(1))
+        if mapped != "unknown":
+            return mapped, [f"UNSPSC {m.group(1)}"]
+
     haystack = f"{text}\n{hint or ''}".lower()
     best: Category = "unknown"
     best_score = 0

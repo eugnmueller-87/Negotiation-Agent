@@ -58,6 +58,38 @@ def test_detect_category_hint_nudges_but_contract_wins():
     assert cat == "cloud_infrastructure"
 
 
+# ── UNSPSC crosswalk — the standards-based path + bridge to spend systems ─────────
+@pytest.mark.parametrize(
+    ("code", "expected"),
+    [
+        ("80111600", "hr_staffing_agency"),  # family 8011 = human resources / staffing
+        ("43211500", "cloud_infrastructure"),  # segment 43 = IT
+        ("78180000", "logistics"),  # segment 78 = transportation
+        ("82100000", "marketing"),  # segment 82 = advertising/design
+        ("80", "professional_services"),  # bare segment 80
+        ("99999999", "unknown"),  # unmapped -> honest unknown, not a guess
+        ("", "unknown"),
+    ],
+)
+def test_category_from_unspsc(code, expected):
+    from negotiation_agent.knowledge.unspsc import category_from_unspsc
+
+    assert category_from_unspsc(code) == expected
+
+
+def test_unspsc_code_in_text_beats_keywords():
+    # a contract CODED as staffing wins even if the body mentions 'cloud' in passing
+    cat, hits = detect_category("Services agreement. UNSPSC 80111600. cloud hosting in passing.")
+    assert cat == "hr_staffing_agency"
+    assert any("80111600" in h for h in hits)  # the code is the cited signal
+
+
+def test_unmapped_unspsc_falls_through_to_keywords():
+    # an unmapped code doesn't force unknown — keyword detection still runs
+    cat, _ = detect_category("UNSPSC 99999999. Azure vCPU compute IaaS hosting egress.")
+    assert cat == "cloud_infrastructure"
+
+
 def test_every_category_has_a_label():
     for cat, _ in [(c, None) for c in CATEGORY_LABELS]:
         assert CATEGORY_LABELS[cat]
@@ -92,9 +124,9 @@ def test_greeting_matches_register():
 def test_has_category_playbook_reflects_index():
     from negotiation_agent.knowledge.retrieve import has_category_playbook
 
-    # the shipped KB has cloud + license material; it has no HR-staffing-agency material
+    # a covered category resolves True; "unknown" never has a playbook (the gap-flag guard)
     assert has_category_playbook("cloud_infrastructure") is True
-    assert has_category_playbook("hr_staffing_agency") is False
+    assert has_category_playbook("hr_staffing_agency") is True  # closed by the authored playbook
     assert has_category_playbook("unknown") is False
 
 
