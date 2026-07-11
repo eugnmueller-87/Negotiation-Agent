@@ -88,19 +88,18 @@ def wrap_letter(body: str, correspondents: dict[str, str] | None) -> str:
     """Add a salutation + sign-off around a bare message body, from the correspondents.
 
     Deterministic mirror of the LLM's formatting rule, used on the fallback path so a
-    template message reads like a real email too. No-op if no correspondents are given.
+    template message reads like a real email too. The register (``formal``/``informal``, if
+    present) picks "Dear …," vs "Hello …,". No-op if no correspondents are given.
     """
     if not correspondents:
         return body
+    from negotiation_agent.knowledge.tone import Register, greeting_for
+
     contact = correspondents.get("supplier_contact", "").strip()
     supplier = correspondents.get("supplier_name", "").strip()
     signature = correspondents.get("buyer_signature", "").strip() or "Procurement Team"
-    if contact:
-        greeting = f"Dear {contact},"
-    elif supplier:
-        greeting = f"Dear {supplier} team,"
-    else:
-        greeting = "Hello,"
+    register: Register = "informal" if correspondents.get("register") == "informal" else "formal"
+    greeting = greeting_for(register, contact=contact, supplier=supplier)
     return f"{greeting}\n\n{body}\n\nBest regards,\n{signature}"
 
 

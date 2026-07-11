@@ -17,9 +17,7 @@ from negotiation_agent.wire import (
 
 
 def test_guard_audit_redrafted_reflects_attempt_count():
-    passed = GuardAudit(
-        released_by="model", attempts=[GuardAttempt(draft="ok", ok=True)]
-    )
+    passed = GuardAudit(released_by="model", attempts=[GuardAttempt(draft="ok", ok=True)])
     assert passed.redrafted is False
 
     redrafted = GuardAudit(

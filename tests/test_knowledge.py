@@ -156,6 +156,31 @@ def test_query_tag_scopes_retrieval():
     assert all(h.tag == "pricing" for h in hits)  # never a negotiation-strategy chunk
 
 
+def test_query_category_scopes_retrieval():
+    chunks = [
+        Chunk(
+            chunk_id="a#0",
+            source="a.md",
+            tag="playbook",
+            category="cloud_infrastructure",
+            text="Reserved vCPU compute discounts on the cloud platform.",
+        ),
+        Chunk(
+            chunk_id="b#0",
+            source="b.md",
+            tag="playbook",
+            category="legal_services",
+            text="Outside counsel billable hour rate negotiation.",
+        ),
+    ]
+    idx = Bm25Index.build(chunks)
+    # "rate" appears only in the legal chunk, but the category filter must exclude it and
+    # still return the cloud chunk on its shared "negotiation" term.
+    hits = idx.query("compute platform rate", category="cloud_infrastructure", top_k=5)
+    assert hits
+    assert all(h.category == "cloud_infrastructure" for h in hits)  # never the legal chunk
+
+
 def test_query_empty_on_no_match():
     idx = _index()
     assert idx.query("zzzxqq wobblefram nonexistentword", top_k=3) == []

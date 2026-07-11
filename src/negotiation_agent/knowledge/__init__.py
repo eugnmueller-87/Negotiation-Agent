@@ -20,15 +20,31 @@ the repo (``data/kb_index.json``); the server loads it read-only.
 from __future__ import annotations
 
 from negotiation_agent.knowledge.bm25 import Bm25Index, Hit
+from negotiation_agent.knowledge.category import CATEGORY_LABELS, Category, detect_category
 from negotiation_agent.knowledge.ingest import Chunk, ingest
 from negotiation_agent.knowledge.manifest import Manifest, ManifestEntry, load_manifest
+from negotiation_agent.knowledge.retrieve import (
+    category_coverage,
+    has_category_playbook,
+    retrieve,
+)
+from negotiation_agent.knowledge.tone import Register, detect_register, greeting_for
 
 __all__ = [
+    "CATEGORY_LABELS",
     "Bm25Index",
+    "Category",
     "Chunk",
     "Hit",
     "Manifest",
     "ManifestEntry",
+    "Register",
+    "category_coverage",
+    "detect_category",
+    "detect_register",
+    "greeting_for",
+    "has_category_playbook",
     "ingest",
     "load_manifest",
+    "retrieve",
 ]

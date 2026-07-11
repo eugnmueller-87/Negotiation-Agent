@@ -290,6 +290,31 @@ def terminate(req: TerminateRequest) -> JSONResponse:
     )
 
 
+def _detect_context(context: object, supplier_messages: list[str]) -> tuple[str, str]:
+    """Auto-detect (procurement category, counterpart register) from all available signal.
+
+    Category comes from the contract text if present, else the free-text hint, else the
+    supplier's own words — so a MAVERICK purchase with no contract still gets a category and
+    its mapped strategy. Register is read from the supplier's messages (formal by default)."""
+    from negotiation_agent.knowledge.category import detect_category
+    from negotiation_agent.knowledge.tone import detect_register
+
+    contract_text = getattr(context, "contract_text", "") or ""
+    hint = getattr(context, "category_hint", "") or ""
+    # signal priority: contract body, else the hint, else what the supplier has said so far
+    signal = contract_text or "\n".join(supplier_messages)
+    category, _ = detect_category(signal, hint=hint)
+    register = detect_register(supplier_messages)
+    return category, register
+
+
+def _correspondents_dict(correspondents: object, register: str) -> dict[str, str]:
+    """The correspondents payload for the drafter, with the detected register folded in."""
+    data = correspondents.model_dump() if hasattr(correspondents, "model_dump") else {}
+    data["register"] = register
+    return data
+
+
 def _supplier_from_text(text: str) -> str:
     """Best-effort supplier name for the Hades lookup (regex; falls back to a label)."""
     from negotiation_agent.intake import extract_contract
@@ -313,18 +338,18 @@ def negotiate_open(req: OpenRequest) -> JSONResponse:
     brief = build_move_brief(
         decision, envelope, None, engine.config.max_rounds, priorities=engine.priorities
     )
+    # Auto-detect the category (no contract yet at the anchor -> from the hint/description)
+    # and start formal (no counterpart message to read).
+    category, register = _detect_context(req.context, [])
+    corr = _correspondents_dict(req.correspondents, register)
     try:
         message, audit = draft_and_guard(
-            draft_client_factory(),
-            brief,
-            decision.approved_numbers,
-            [],
-            req.correspondents.model_dump(),
+            draft_client_factory(), brief, decision.approved_numbers, [], corr, category
         )
     except Exception:  # noqa: BLE001 - degrade to fallback, never leak the LLM error
         from negotiation_agent.fallback import render_fallback, wrap_letter
 
-        message = wrap_letter(render_fallback(brief), req.correspondents.model_dump())
+        message = wrap_letter(render_fallback(brief), corr)
         audit = GuardAudit(released_by="fallback", attempts=[])
 
     turn = turn_result(
@@ -337,6 +362,8 @@ def negotiate_open(req: OpenRequest) -> JSONResponse:
         engine.priorities,
         False,
         engine.config.max_rounds,
+        category,
+        register,
     )
     resp = OpenResponse(signed_mandate=signed, turn=turn)
     return JSONResponse(content=resp.model_dump(mode="json"))
@@ -377,6 +404,12 @@ def negotiate_step(req: StepRequest, request: Request) -> JSONResponse:
     except NegotiationClosed:
         return _err("negotiation_closed", "this negotiation has already ended", 409)
 
+    # Auto-detect category + register from all supplier messages so far (the transcript plus
+    # this turn). A maverick purchase with no contract still gets a category from these words.
+    supplier_messages = [t.raw_text for t in req.transcript.turns] + [supplier_text]
+    category, register = _detect_context(req.context, supplier_messages)
+    corr = _correspondents_dict(req.correspondents, register)
+
     # Draft the buyer message, unless a human is playing the buyer (then guard their text).
     approved = dict(decision.approved_numbers)
     if req.buyer_input is not None:
@@ -397,16 +430,12 @@ def negotiate_step(req: StepRequest, request: Request) -> JSONResponse:
         )
         try:
             message, audit = draft_and_guard(
-                draft_client_factory(),
-                brief,
-                approved,
-                _thread(req),
-                req.correspondents.model_dump(),
+                draft_client_factory(), brief, approved, _thread(req), corr, category
             )
         except Exception:  # noqa: BLE001 - degrade to fallback, never a 500 from the LLM
             from negotiation_agent.fallback import render_fallback, wrap_letter
 
-            msg = wrap_letter(render_fallback(brief), req.correspondents.model_dump())
+            msg = wrap_letter(render_fallback(brief), corr)
             message, audit = msg, GuardAudit(released_by="fallback", attempts=[])
     else:  # ESCALATE — figure-free holding note
         brief = build_move_brief(
@@ -414,7 +443,7 @@ def negotiate_step(req: StepRequest, request: Request) -> JSONResponse:
         )
         from negotiation_agent.fallback import render_fallback, wrap_letter
 
-        msg = wrap_letter(render_fallback(brief), req.correspondents.model_dump())
+        msg = wrap_letter(render_fallback(brief), corr)
         message, audit = msg, GuardAudit(released_by="fallback", attempts=[])
 
     terminal = decision.outcome is not Outcome.COUNTER
@@ -429,6 +458,8 @@ def negotiate_step(req: StepRequest, request: Request) -> JSONResponse:
         engine.priorities,
         include_internal,
         engine.config.max_rounds,
+        category,
+        register,
     )
     resp = StepResponse(
         buyer_view=_buyer_view(req, message, supplier_text),

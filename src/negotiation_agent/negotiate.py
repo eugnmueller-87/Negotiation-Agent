@@ -25,7 +25,8 @@ from negotiation_agent.fallback import build_redraft_instruction, render_fallbac
 from negotiation_agent.guard import check
 from negotiation_agent.intake import extract_contract
 from negotiation_agent.knowledge.bm25 import Hit
-from negotiation_agent.knowledge.retrieve import retrieve
+from negotiation_agent.knowledge.category import CATEGORY_LABELS
+from negotiation_agent.knowledge.retrieve import has_category_playbook, retrieve
 from negotiation_agent.llm import DraftClient
 from negotiation_agent.supplier_model import SupplierModel
 from negotiation_agent.wire import (
@@ -94,15 +95,23 @@ def _move_query(brief: MoveBrief) -> str | None:
     return f"{brief.pressure} negotiation concede {moved} hold {held}".strip()
 
 
-def _retrieve_hits(brief: MoveBrief) -> list[Hit]:
-    """The knowledge chunks retrieved for this move (strategy + levers, deduped by source)."""
+def _retrieve_hits(brief: MoveBrief, category: str | None = None) -> list[Hit]:
+    """The knowledge chunks retrieved for this move (strategy + levers, deduped by source).
+
+    Strategy (Fisher-Ury) is category-agnostic and always pulled general. Category-specific
+    levers are pulled scoped to ``category`` when the KB has a playbook for it; otherwise
+    levers fall back to general so the agent still gets *some* concrete lever ideas."""
     query = _move_query(brief)
     if query is None:
         return []
-    hits = [*retrieve(query, tag="negotiation-strategy", top_k=2), *retrieve(query, top_k=2)]
+    strategy = retrieve(query, tag="negotiation-strategy", top_k=2)
+    if category and category != "unknown" and has_category_playbook(category):
+        levers = retrieve(query, category=category, top_k=2)
+    else:
+        levers = retrieve(query, top_k=2)  # general levers — no category scope
     seen: set[str] = set()
     out: list[Hit] = []
-    for hit in hits:
+    for hit in [*strategy, *levers]:
         if hit.source not in seen:
             seen.add(hit.source)
             out.append(hit)
@@ -117,9 +126,9 @@ def _advice_line(hit: Hit) -> str:
     return f"[{hit.source}] {text}"
 
 
-def _retrieve_advice(brief: MoveBrief) -> list[str]:
+def _retrieve_advice(brief: MoveBrief, category: str | None = None) -> list[str]:
     """Retrieve negotiation guidance for this move. Always safe: [] if the index is absent."""
-    return [_advice_line(h) for h in _retrieve_hits(brief)]
+    return [_advice_line(h) for h in _retrieve_hits(brief, category)]
 
 
 def _consulted_label(source: str) -> str:
@@ -128,14 +137,27 @@ def _consulted_label(source: str) -> str:
     return stem.replace("-", " ").replace("_", " ").strip()
 
 
-def consulted_sources(brief: MoveBrief) -> list[ConsultedSource]:
+def _coverage_gap(category: str) -> str:
+    """A human note when the KB lacks a playbook for this category — else empty.
+
+    The honesty flag: the agent says "no <category> playbook yet — using general strategy"
+    rather than pretending it negotiated with category expertise it didn't have."""
+    if category == "unknown":
+        return "Category not recognised — using general negotiation strategy."
+    if not has_category_playbook(category):
+        label = CATEGORY_LABELS.get(category, category)
+        return f"No {label} playbook in the knowledge base yet — using general strategy."
+    return ""
+
+
+def consulted_sources(brief: MoveBrief, category: str | None = None) -> list[ConsultedSource]:
     """The KB sources the agent consulted for this move — shown in the reasoning drawer.
 
     Recomputed from the brief (deterministic, same query as the drafter saw) so the UI list
     matches what actually shaped the message. Empty if the index is absent."""
     return [
         ConsultedSource(source=h.source, tag=h.tag, label=_consulted_label(h.source))
-        for h in _retrieve_hits(brief)
+        for h in _retrieve_hits(brief, category)
     ]
 
 
@@ -145,16 +167,18 @@ def draft_and_guard(
     approved: dict[str, float],
     thread: list[dict[str, str]],
     correspondents: dict[str, str] | None = None,
+    category: str | None = None,
 ) -> tuple[str, GuardAudit]:
     """Draft the buyer message, guarding each attempt; redraft or fall back.
 
     The returned message is guaranteed clean: it is either a model draft that passed
     the guard, or the deterministic fallback (which passes by construction). A
-    violating draft is never returned.
+    violating draft is never returned. ``category`` scopes lever retrieval; the register
+    (formal/informal), if present in ``correspondents``, drives the salutation.
     """
     attempts: list[GuardAttempt] = []
     work_thread = list(thread)
-    advice = _retrieve_advice(brief)
+    advice = _retrieve_advice(brief, category)
     for _ in range(_MAX_REDRAFTS + 1):
         draft = drafter.draft_buyer(brief, work_thread, advice, correspondents)
         violations = check(draft, approved)
@@ -203,6 +227,8 @@ def turn_result(
     priorities: dict[str, float] | None,
     include_internal: bool,
     max_rounds: int,
+    category: str = "unknown",
+    register: str = "formal",
 ) -> TurnResult:
     """Assemble the decision echo. ``include_internal`` gates the buyer-private block."""
     brief = build_move_brief(decision, envelope, prev_counter, max_rounds, priorities=priorities)
@@ -226,7 +252,11 @@ def turn_result(
         guard=guard,
         bar_fills=bar_fills,
         internal=internal,
-        consulted=consulted_sources(brief),
+        consulted=consulted_sources(brief, category),
+        category=category,
+        category_label=CATEGORY_LABELS.get(category, category),
+        counterpart_tone=register,
+        coverage_gap=_coverage_gap(category),
     )
 
 

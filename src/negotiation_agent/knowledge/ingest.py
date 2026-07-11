@@ -20,6 +20,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
+from negotiation_agent.knowledge.category import detect_category
 from negotiation_agent.knowledge.manifest import Manifest, ManifestEntry
 
 # Chunk sizing: big enough to hold a full lever/story, small enough to rank precisely.
@@ -62,8 +63,9 @@ _PERSONAL_MARKERS = (
 
 
 class Chunk(BaseModel):
-    """One retrievable passage. ``source`` + ``tag`` are carried so retrieval can cite
-    and scope; ``text`` is what BM25 indexes."""
+    """One retrievable passage. ``source`` + ``tag`` + ``category`` are carried so retrieval
+    can cite and scope; ``text`` is what BM25 indexes. ``tag`` is the CONTENT type (playbook,
+    pricing…); ``category`` is the PROCUREMENT category (cloud, hr…) detected from the text."""
 
     model_config = {"frozen": True}
 
@@ -71,6 +73,7 @@ class Chunk(BaseModel):
     source: str  # the manifest-relative path it came from
     tag: str
     text: str
+    category: str = "unknown"
 
 
 def strip_frontmatter(text: str) -> str:
@@ -130,7 +133,7 @@ def _paragraphs(text: str) -> list[str]:
     return [p.strip() for p in re.split(r"\r?\n\s*\r?\n", text) if p.strip()]
 
 
-def chunk_text(text: str, *, source: str, tag: str) -> list[Chunk]:
+def chunk_text(text: str, *, source: str, tag: str, category: str = "unknown") -> list[Chunk]:
     """Pack paragraphs into ~``_CHUNK_CHARS`` passages with a one-paragraph overlap."""
     paras = _paragraphs(text)
     chunks: list[Chunk] = []
@@ -143,7 +146,13 @@ def chunk_text(text: str, *, source: str, tag: str) -> list[Chunk]:
         if not buf:
             return
         chunks.append(
-            Chunk(chunk_id=f"{source}#{n}", source=source, tag=tag, text="\n\n".join(buf))
+            Chunk(
+                chunk_id=f"{source}#{n}",
+                source=source,
+                tag=tag,
+                text="\n\n".join(buf),
+                category=category,
+            )
         )
         n += 1
 
@@ -169,10 +178,15 @@ def _ingest_entry(entry: ManifestEntry, root: Path) -> list[Chunk]:
     if entry.scrub_personal:
         body = strip_jobhunt_sections(body)
     body = redact_contacts(body)  # strip emails/phones from every file
+    # Detect the procurement category once per file (whole-doc signal is stronger than a
+    # single chunk's) and stamp it on every chunk so retrieval can scope by category.
+    category, _ = detect_category(body)
     # Final content gate: drop any chunk that still carries a personal marker. Applied to
     # every file, so the scrub can't be bypassed by a mis-flagged entry.
     return [
-        c for c in chunk_text(body, source=entry.path, tag=entry.tag) if not is_personal(c.text)
+        c
+        for c in chunk_text(body, source=entry.path, tag=entry.tag, category=category)
+        if not is_personal(c.text)
     ]
 
 

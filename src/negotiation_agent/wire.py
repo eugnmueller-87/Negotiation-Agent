@@ -122,6 +122,17 @@ class Correspondents(BaseModel):
     buyer_signature: str = "Procurement Team"
 
 
+class NegotiationContext(BaseModel):
+    """Free-text signal the server uses to auto-detect the procurement category — the
+    contract body and/or the category label. Never a human-picked category (fully
+    automatic); the server classifies it. All optional."""
+
+    model_config = {"frozen": True}
+
+    contract_text: str = ""
+    category_hint: str = ""  # the setup form's free-text category label, if any
+
+
 class OpenRequest(BaseModel):
     """Start a negotiation: the server signs the mandate and drafts the anchor."""
 
@@ -131,6 +142,7 @@ class OpenRequest(BaseModel):
     session_id: str = Field(min_length=1)
     supplier_persona: Literal["cooperative", "aggressive", "evasive"] = "aggressive"
     correspondents: Correspondents = Field(default_factory=Correspondents)
+    context: NegotiationContext = Field(default_factory=NegotiationContext)
 
 
 class StepRequest(BaseModel):
@@ -144,6 +156,7 @@ class StepRequest(BaseModel):
     buyer_input: BuyerInput | None = None
     session_id: str = Field(min_length=1)
     correspondents: Correspondents = Field(default_factory=Correspondents)
+    context: NegotiationContext = Field(default_factory=NegotiationContext)
 
 
 # ---- Responses ----------------------------------------------------------------
@@ -214,6 +227,10 @@ class TurnResult(BaseModel):
     bar_fills: dict[str, float] = Field(default_factory=dict)
     internal: InternalState | None = None
     consulted: list[ConsultedSource] = Field(default_factory=list)
+    category: str = "unknown"  # detected procurement category
+    category_label: str = ""  # human label for the category
+    counterpart_tone: str = "formal"  # detected register (formal/informal)
+    coverage_gap: str = ""  # non-empty when the KB has no playbook for this category
 
 
 class TranscriptView(BaseModel):

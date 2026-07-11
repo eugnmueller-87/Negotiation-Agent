@@ -41,6 +41,7 @@ class Hit(BaseModel):
     tag: str
     text: str
     score: float
+    category: str = "unknown"
 
 
 class Bm25Index(BaseModel):
@@ -77,10 +78,17 @@ class Bm25Index(BaseModel):
         df = self.doc_freq.get(term, 0)
         return max(0.0, math.log((self.n_docs - df + 0.5) / (df + 0.5) + 1.0))
 
-    def query(self, text: str, *, top_k: int = 5, tag: str | None = None) -> list[Hit]:
-        """Rank chunks for ``text``. ``tag`` scopes retrieval to one topic (e.g. only
-        pricing chunks). Returns the top ``top_k`` by score, ties broken by chunk_id for
-        determinism."""
+    def query(
+        self,
+        text: str,
+        *,
+        top_k: int = 5,
+        tag: str | None = None,
+        category: str | None = None,
+    ) -> list[Hit]:
+        """Rank chunks for ``text``. ``tag`` scopes to one content type (e.g. pricing);
+        ``category`` scopes to one procurement category (e.g. cloud_infrastructure). Returns
+        the top ``top_k`` by score, ties broken by chunk_id for determinism."""
         q_terms = tokenize(text)
         if not q_terms or self.n_docs == 0:
             return []
@@ -89,6 +97,8 @@ class Bm25Index(BaseModel):
         scored: list[tuple[float, int]] = []
         for i, (chunk, toks) in enumerate(zip(self.chunks, self.doc_tokens, strict=True)):
             if tag is not None and chunk.tag != tag:
+                continue
+            if category is not None and chunk.category != category:
                 continue
             if not toks:
                 continue
@@ -114,6 +124,7 @@ class Bm25Index(BaseModel):
                 tag=self.chunks[i].tag,
                 text=self.chunks[i].text,
                 score=round(s, 4),
+                category=self.chunks[i].category,
             )
             for s, i in scored[:top_k]
         ]

@@ -42,12 +42,35 @@ def _load_index() -> Bm25Index | None:
         return None
 
 
-def retrieve(query: str, *, tag: str | None = None, top_k: int = 3) -> list[Hit]:
-    """Top-``top_k`` knowledge chunks for ``query`` (optionally scoped to one ``tag``).
+def retrieve(
+    query: str, *, tag: str | None = None, category: str | None = None, top_k: int = 3
+) -> list[Hit]:
+    """Top-``top_k`` knowledge chunks for ``query``, optionally scoped to a content ``tag``
+    and/or a procurement ``category``.
 
     Returns [] when the index is absent — the layer is always optional.
     """
     index = _load_index()
     if index is None:
         return []
-    return index.query(query, top_k=top_k, tag=tag)
+    return index.query(query, top_k=top_k, tag=tag, category=category)
+
+
+# A category needs at least this many chunks to be worth scoping to; below it, retrieval
+# falls back to general (unscoped) strategy and the caller flags the coverage gap.
+_MIN_CATEGORY_CHUNKS = 4
+
+
+def category_coverage(category: str) -> int:
+    """How many chunks the index holds for a procurement category (0 if index absent)."""
+    index = _load_index()
+    if index is None:
+        return 0
+    return sum(1 for c in index.chunks if c.category == category)
+
+
+def has_category_playbook(category: str) -> bool:
+    """True if the KB has enough material to negotiate this category specifically."""
+    if category == "unknown":
+        return False
+    return category_coverage(category) >= _MIN_CATEGORY_CHUNKS

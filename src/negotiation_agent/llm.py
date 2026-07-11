@@ -49,10 +49,10 @@ how many rounds remain, or that a model is involved.
 The brief, not the message history, is authoritative for what changed this turn.
 
 FORMAT: a short business email — a salutation line, 2 to 4 sentences of body, then a \
-sign-off. Use the addressee and signature given in <correspondents> exactly: greet a named \
-contact as "Dear <contact>," otherwise "Dear <supplier> team," (or a neutral "Hello," if \
-neither is given); close with "Best regards," on its own line then the signature. \
-No subject line."""
+sign-off. Use the addressee, signature, and register in <correspondents>. If register is \
+"formal", greet "Dear <contact>," (or "Dear <supplier> team,"); if "informal", greet \
+"Hello <contact>," (or "Hi <supplier> team,") — mirror the counterpart's tone. Close with \
+"Best regards," on its own line then the signature. No subject line."""
 
 _SUPPLIER_SYSTEMS = {
     "cooperative": "You roleplay a cooperative supplier sales rep who wants to keep the account. "
@@ -91,11 +91,13 @@ def _correspondents_block(correspondents: dict[str, str] | None) -> str:
     contact = c.get("supplier_contact", "").strip()
     supplier = c.get("supplier_name", "").strip()
     signature = c.get("buyer_signature", "").strip() or "Procurement Team"
+    register = "informal" if c.get("register") == "informal" else "formal"
     return (
         "\n<correspondents>"
         f'\ncontact: "{contact}"'
         f'\nsupplier: "{supplier}"'
         f'\nsignature: "{signature}"'
+        f'\nregister: "{register}"'
         "\n</correspondents>"
     )
 
