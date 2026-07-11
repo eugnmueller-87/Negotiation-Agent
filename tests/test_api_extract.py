@@ -1,0 +1,93 @@
+"""The /extract-text endpoint — upload a PDF/DOCX and get back the negotiable text.
+
+Proves the upload → text path the frontend uses so a PDF flows into /intel. Failure
+cases (scanned PDF, unsupported type) return a typed 4xx, never a silent empty string.
+"""
+
+from __future__ import annotations
+
+import io
+
+import pytest
+
+pytest.importorskip("fastapi")
+pytest.importorskip("pypdf")
+
+from fastapi.testclient import TestClient  # noqa: E402
+
+from negotiation_agent import api  # noqa: E402
+
+CONTRACT = "SUPPLY AGREEMENT. Supplier: Acme GmbH. Unit price EUR 11.50 per unit."
+
+
+def _pdf(text: str) -> bytes:
+    escaped = text.replace("\\", "\\\\").replace("(", r"\(").replace(")", r"\)")
+    content = f"BT /F1 24 Tf 72 720 Td ({escaped}) Tj ET".encode("latin-1")
+    objs = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+        b"/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+        b"<< /Length %d >>\nstream\n%s\nendstream" % (len(content), content),
+    ]
+    pdf = b"%PDF-1.4\n"
+    offsets: list[int] = []
+    for i, body in enumerate(objs, start=1):
+        offsets.append(len(pdf))
+        pdf += b"%d 0 obj\n%s\nendobj\n" % (i, body)
+    xref_pos = len(pdf)
+    pdf += b"xref\n0 %d\n0000000000 65535 f \n" % (len(objs) + 1)
+    for off in offsets:
+        pdf += b"%010d 00000 n \n" % off
+    trailer = b"trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF"
+    pdf += trailer % (len(objs) + 1, xref_pos)
+    return pdf
+
+
+@pytest.fixture
+def client(monkeypatch):
+    monkeypatch.setenv("PEITHO_MANDATE_SECRET", "t")
+    return TestClient(api.app)
+
+
+def test_extract_pdf_returns_text(client):
+    files = {"file": ("contract.pdf", _pdf(CONTRACT), "application/pdf")}
+    r = client.post("/extract-text", files=files)
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert "Acme GmbH" in d["text"]
+    assert d["filename"] == "contract.pdf"
+    assert d["chars"] > 0
+
+
+def test_scanned_pdf_is_422_not_empty(client):
+    # a blank page (no text layer) -> the endpoint reports it, never returns "" as success
+    from pypdf import PdfWriter
+
+    w = PdfWriter()
+    w.add_blank_page(width=595, height=842)
+    buf = io.BytesIO()
+    w.write(buf)
+    files = {"file": ("scan.pdf", buf.getvalue(), "application/pdf")}
+    r = client.post("/extract-text", files=files)
+    assert r.status_code == 422
+    assert r.json()["error"]["code"] == "no_text_layer"
+
+
+def test_unsupported_type_is_415(client):
+    r = client.post("/extract-text", files={"file": ("logo.png", b"\x89PNG\r\n", "image/png")})
+    assert r.status_code == 415
+    assert r.json()["error"]["code"] == "unsupported_file_type"
+
+
+def test_empty_file_is_400(client):
+    r = client.post("/extract-text", files={"file": ("empty.txt", b"", "text/plain")})
+    assert r.status_code == 400
+    assert r.json()["error"]["code"] == "empty_file"
+
+
+def test_plaintext_passthrough(client):
+    r = client.post("/extract-text", files={"file": ("c.txt", CONTRACT.encode(), "text/plain")})
+    assert r.status_code == 200
+    assert r.json()["text"] == CONTRACT

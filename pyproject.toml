@@ -42,6 +42,13 @@ web = [
     "fastapi>=0.110",
     "uvicorn>=0.29",
     "anthropic>=0.40",
+    # Contract file → text: pure-Python PDF text-layer extraction (no system binary,
+    # deploys clean on Nixpacks) and Word .docx. Text-layer only — a scanned/image PDF
+    # yields no text and is warned, not OCR'd. python-multipart lets FastAPI accept the
+    # file upload (UploadFile).
+    "pypdf>=4.0",
+    "python-docx>=1.1",
+    "python-multipart>=0.0.9",
 ]
 
 [project.urls]

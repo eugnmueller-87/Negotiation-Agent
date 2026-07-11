@@ -24,7 +24,7 @@ import time
 from pathlib import Path
 
 try:
-    from fastapi import FastAPI, Request
+    from fastapi import FastAPI, Request, UploadFile
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import FileResponse, JSONResponse
     from pydantic import BaseModel
@@ -131,6 +131,45 @@ def demo() -> FileResponse | JSONResponse:
 def prepare(req: PrepareRequest) -> PreparedNegotiation:
     """Extract the opening position from a contract and brief the supplier."""
     return prepare_negotiation(req.contract_text, researcher=HadesClient(), research=req.research)
+
+
+# A PDF/DOCX upload is bulky (images) even though its text is small; cap the file at
+# 20 MB, read in bounded chunks so a lying Content-Length can't exhaust memory.
+_MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+
+
+@app.post("/extract-text", response_model=None)
+async def extract_text_endpoint(file: UploadFile) -> JSONResponse:
+    """Extract the text from an uploaded contract file (PDF / Word .docx / plain text).
+
+    The frontend sends the raw file; we return ``{"text": ...}`` which it then feeds to
+    ``/intel`` — the same path a paste takes. Scanned PDFs (no text layer) and corrupt
+    files come back as a typed 4xx with a human-safe message, never a silent empty string.
+    """
+    from negotiation_agent.extract_text import ExtractError, extract_file
+
+    # Read with a hard byte cap — don't trust Content-Length, count what actually arrives.
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = await file.read(1024 * 1024)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > _MAX_UPLOAD_BYTES:
+            return _err("file_too_large", "file exceeds the 20 MB limit", 413)
+        chunks.append(chunk)
+    data = b"".join(chunks)
+    if not data:
+        return _err("empty_file", "the uploaded file is empty", 400)
+
+    try:
+        text = extract_file(file.filename or "", data)
+    except ExtractError as e:
+        # 415 for an unsupported type, 422 for a readable-but-unusable file (scanned/corrupt)
+        status = 415 if e.code == "unsupported_file_type" else 422
+        return _err(e.code, str(e), status)
+    return JSONResponse(content={"text": text, "filename": file.filename or "", "chars": len(text)})
 
 
 class IntelRequest(BaseModel):

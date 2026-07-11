@@ -133,6 +133,7 @@
   .intel-research{font-size:12px;color:var(--ink-2);display:inline-flex;align-items:center;gap:6px;cursor:pointer;}
   .intel-err{color:var(--crit);font-size:12.5px;}
   .spin{width:12px;height:12px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;display:inline-block;animation:sp .6s linear infinite;}
+  .spin.dark{border-color:color-mix(in srgb,var(--buyer) 30%,transparent);border-top-color:var(--buyer);vertical-align:-1px;}
   @keyframes sp{to{transform:rotate(360deg);}}
 
   .intel-out{margin-top:16px;border-top:1px solid var(--line);padding-top:14px;}
@@ -603,10 +604,12 @@ Category: Corrugated packaging
     </div>
     <label class="intel-drop${it.busy?" over":""}" id="intelDrop">
       <svg width="20" height="20"><use href="#i-seal"/></svg>
-      <div>${it.filename
+      <div>${it.busy
+        ? `<span class="dz-main"><span class="spin dark"></span> Extracting text…</span><span class="dz-sub">reading the contract's text layer</span>`
+        : it.filename
         ? `<span class="dz-main">Loaded <span class="dz-file">${esc(it.filename)}</span></span><span class="dz-sub">click or drop another file to replace it</span>`
-        : `<span class="dz-main">Drop a contract file here, or click to choose</span><span class="dz-sub">plain-text .txt · .md · .csv — for PDF/DOCX, paste the text below</span>`}</div>
-      <input type="file" id="intelFile" accept=".txt,.md,.markdown,.csv,.text,text/plain" hidden>
+        : `<span class="dz-main">Drop a contract file here, or click to choose</span><span class="dz-sub">PDF · Word .docx · .txt · .md · .csv — scanned/image PDFs have no text to read</span>`}</div>
+      <input type="file" id="intelFile" accept=".pdf,.docx,.txt,.md,.markdown,.csv,.text,application/pdf,text/plain" hidden>
     </label>
     <textarea class="intel-ta" id="intelText" placeholder="…or paste contract text here">${esc(it.text)}</textarea>
     <div class="intel-row">
@@ -769,22 +772,20 @@ function bindIntel(){
   const ab=$("#intelApplyBtn"); if(ab) ab.onclick=applyIntel;
 }
 
-// A dropped/selected file → the intel textarea. Text formats only; binary (PDF/DOCX/zip)
-// is rejected with an honest message rather than fed as garbage to the extractor.
+// A dropped/selected file → the intel textarea. PDF and Word .docx are parsed to text
+// server-side (/extract-text); plain text is read in-browser. A scanned PDF (no text
+// layer) or corrupt file comes back as an honest error, never a silent empty box.
 function readFileIntoIntel(file){
-  const MAX=20*1024*1024; // 20 MB file cap — a big export can be bulky even though its TEXT is small
+  const MAX=20*1024*1024; // 20 MB file cap — a big export is bulky even though its TEXT is small
   if(file.size>MAX){ M.intel.error=`${file.name} is too large (${(file.size/1048576).toFixed(1)} MB) — max 20 MB`; M.intel.filename=""; render(); return; }
   const name=(file.name||"").toLowerCase();
-  if(/\.(pdf|docx?|xlsx?|pptx?|zip|rtf)$/.test(name)){
-    M.intel.error=`${file.name} is a binary format the demo can't parse — open it and paste the text below`;
-    M.intel.filename=""; render(); return;
-  }
+  if(/\.(pdf|docx)$/.test(name)) return extractFileServerSide(file);
+  // plain text: read in the browser, no round-trip
   const reader=new FileReader();
   reader.onerror=()=>{ M.intel.error=`couldn't read ${file.name}`; render(); };
   reader.onload=()=>{
     const text=String(reader.result||"");
-    // a NUL byte in the first slice means it's binary despite the extension
-    if(/\x00/.test(text.slice(0,4096))){
+    if(/\x00/.test(text.slice(0,4096))){  // a NUL byte means it's binary despite the extension
       M.intel.error=`${file.name} looks binary, not text — open it and paste the text below`;
       M.intel.filename=""; render(); return;
     }
@@ -792,6 +793,20 @@ function readFileIntoIntel(file){
     render();
   };
   reader.readAsText(file);
+}
+
+// Upload a PDF/DOCX to the backend, which extracts the text layer and returns it. The
+// text then flows into the same intel path a paste takes.
+async function extractFileServerSide(file){
+  M.intel.busy=true; M.intel.error=null; M.intel.result=null; M.intel.filename=""; render();
+  try{
+    const fd=new FormData(); fd.append("file", file, file.name);
+    const r=await fetch(API+"/extract-text", {method:"POST", headers:{"X-Peitho-Godview":"1"}, body:fd});
+    const data=await r.json().catch(()=>({error:{code:"bad_response",message:"unreadable response"}}));
+    if(!r.ok) throw new Error(data?.error?.message||"couldn't read the file");
+    M.intel.text=data.text||""; M.intel.filename=file.name; M.intel.accepted={};
+  }catch(e){ M.intel.error=e.message||`couldn't read ${file.name}`; }
+  finally{ M.intel.busy=false; render(); }
 }
 
 async function readContract(){

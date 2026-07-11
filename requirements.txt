@@ -10,3 +10,9 @@ pydantic>=2.6,<3
 fastapi>=0.110
 uvicorn>=0.29
 anthropic>=0.40
+# Contract file → text (the /extract-text endpoint): pure-Python PDF text-layer
+# extraction (no system binary) + Word .docx; python-multipart lets FastAPI accept
+# the upload. Text-layer only — a scanned PDF is warned, not OCR'd.
+pypdf>=4.0
+python-docx>=1.1
+python-multipart>=0.0.9
