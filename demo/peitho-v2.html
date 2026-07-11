@@ -805,6 +805,8 @@ async function extractFileServerSide(file){
     const data=await r.json().catch(()=>({error:{code:"bad_response",message:"unreadable response"}}));
     if(!r.ok) throw new Error(data?.error?.message||"couldn't read the file");
     M.intel.text=data.text||""; M.intel.filename=file.name; M.intel.accepted={};
+    // surface a truncation warning honestly — a >2 MB-text read is never reported as complete
+    M.intel.error = data.truncated ? `⚠ ${data.warning||"the document was truncated for analysis"}` : null;
   }catch(e){ M.intel.error=e.message||`couldn't read ${file.name}`; }
   finally{ M.intel.busy=false; render(); }
 }

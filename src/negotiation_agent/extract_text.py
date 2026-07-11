@@ -19,15 +19,28 @@ from __future__ import annotations
 
 import io
 
+from pydantic import BaseModel
+
 # Below this many non-whitespace characters, a PDF is treated as having no usable text
 # layer (scanned/image-only) rather than a real-but-short contract. A one-line contract
 # is not a real contract; a scanned page yields near-zero extractable characters.
 _MIN_TEXT_CHARS = 20
 
 # Same 2 MB bound the regex extractor applies — cap here too so a pathological document
-# can't balloon memory before it reaches the extractor. Truncation past this is the
-# extractor's job to warn about (it re-checks); here we just bound the handoff.
+# can't balloon memory. When the extracted text exceeds this we cut it AND set truncated=True
+# on the result, so the caller can warn the human (the downstream intake re-check can't fire
+# on already-cut text — both caps are identical — so truncation MUST be reported here).
 _MAX_TEXT_CHARS = 2_000_000
+
+
+class ExtractResult(BaseModel):
+    """Extracted text plus whether it was cut at the cap. ``truncated`` is surfaced to the
+    human — a silent cut on the upload path would violate the no-silent-truncation rule."""
+
+    model_config = {"frozen": True}
+
+    text: str
+    truncated: bool = False
 
 
 class ExtractError(Exception):
@@ -54,22 +67,49 @@ class CorruptFile(ExtractError):
     code = "corrupt_file"
 
 
-def extract_pdf(data: bytes) -> str:
+# A digitally-generated contract is well under this; a file declaring far more pages is a
+# complexity/decompression bomb (an attacker packs millions of pages under the 20 MB byte
+# cap). Cap the pages we iterate so one crafted PDF can't pin the process for minutes.
+_MAX_PDF_PAGES = 500
+
+
+def _cap(text: str) -> ExtractResult:
+    """Cut ``text`` to the char cap, flagging whether a cut happened (surfaced to the human)."""
+    if len(text) > _MAX_TEXT_CHARS:
+        return ExtractResult(text=text[:_MAX_TEXT_CHARS], truncated=True)
+    return ExtractResult(text=text, truncated=False)
+
+
+def extract_pdf(data: bytes) -> ExtractResult:
     """Extract the text layer from a PDF. Raises :class:`NoTextLayer` if there is none.
 
     Imports pypdf lazily so the core package keeps its single runtime dependency; the
     import only runs when the ``[web]`` extra is installed and a PDF is actually uploaded.
+    Bounded work: at most ``_MAX_PDF_PAGES`` pages, and extraction stops once the accumulated
+    text passes the char cap — a crafted many-page PDF can't run for minutes.
     """
     try:
         from pypdf import PdfReader
-        from pypdf.errors import PyPdfError
     except ImportError as e:  # pragma: no cover - exercised only without the extra
         raise ExtractError("PDF support needs the 'web' extra (pypdf)") from e
 
     try:
         reader = PdfReader(io.BytesIO(data))
-        parts = [page.extract_text() or "" for page in reader.pages]
-    except (PyPdfError, ValueError, OSError) as e:
+        if len(reader.pages) > _MAX_PDF_PAGES:
+            raise CorruptFile(
+                f"the PDF has more than {_MAX_PDF_PAGES} pages — split it or paste the key clauses."
+            )
+        parts: list[str] = []
+        size = 0
+        for page in reader.pages:
+            piece = page.extract_text() or ""
+            parts.append(piece)
+            size += len(piece)
+            if size > _MAX_TEXT_CHARS:
+                break  # enough text; don't grind through the rest (bounds crafted input)
+    except CorruptFile:
+        raise
+    except Exception as e:  # noqa: BLE001 - pypdf raises varied/undocumented errors on bad input
         raise CorruptFile("the PDF could not be read — it may be corrupt or encrypted") from e
 
     text = "\n\n".join(p.strip() for p in parts if p.strip())
@@ -78,10 +118,10 @@ def extract_pdf(data: bytes) -> str:
             "no text layer found — this looks like a scanned image. "
             "Paste the text, or upload a text-based PDF."
         )
-    return text[:_MAX_TEXT_CHARS]
+    return _cap(text)
 
 
-def extract_docx(data: bytes) -> str:
+def extract_docx(data: bytes) -> ExtractResult:
     """Extract paragraph + table text from a Word .docx. Raises on a non-docx/corrupt file."""
     try:
         import docx  # python-docx
@@ -104,15 +144,16 @@ def extract_docx(data: bytes) -> str:
     text = "\n".join(lines).strip()
     if len(text.replace(" ", "").replace("\n", "")) < _MIN_TEXT_CHARS:
         raise NoTextLayer("the document has no readable text — paste the contract text instead.")
-    return text[:_MAX_TEXT_CHARS]
+    return _cap(text)
 
 
-def extract_file(filename: str, data: bytes) -> str:
+def extract_file(filename: str, data: bytes) -> ExtractResult:
     """Route a file to the right extractor by its extension. The single public entry point.
 
     Plain-text formats are decoded directly (utf-8, latin-1 fallback). PDF and DOCX go
     to their extractors. Anything else raises :class:`UnsupportedFileType`. Every failure
     is a typed :class:`ExtractError` with a human-safe message — the API maps it to a 4xx.
+    Returns an :class:`ExtractResult` whose ``truncated`` flag the caller must surface.
     """
     name = (filename or "").lower()
     if name.endswith(".pdf"):
@@ -127,7 +168,7 @@ def extract_file(filename: str, data: bytes) -> str:
             text = data.decode("latin-1")
         if "\x00" in text[:4096]:
             raise CorruptFile("this file looks binary, not text — paste the contract text instead.")
-        return text[:_MAX_TEXT_CHARS]
+        return _cap(text)
     raise UnsupportedFileType(
         "unsupported file type — upload a PDF, Word .docx, or plain-text file."
     )

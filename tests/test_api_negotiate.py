@@ -114,6 +114,25 @@ def test_step_folds_and_counters(client):
     assert "0.6" not in r.text or "reservation" not in r.text
 
 
+def test_step_reports_misconfigured_not_tampered_when_secret_missing(client, monkeypatch):
+    # a signed mandate exists, but the server loses PEITHO_MANDATE_SECRET (e.g. a redeploy
+    # drops the env var). /step must report a server misconfiguration (500), NOT blame the
+    # client for tampering (400) — the ops signal must point at the server (audit issue #8).
+    signed = _open(client)["signed_mandate"]
+    monkeypatch.delenv("PEITHO_MANDATE_SECRET", raising=False)
+    r = client.post(
+        "/negotiate/step",
+        json={
+            "signed_mandate": signed,
+            "transcript": {"turns": []},
+            "supplier_input": {"mode": "bot", "raw_text": "€105.00, net-30, 24 months."},
+            "session_id": "s1",
+        },
+    )
+    assert r.status_code == 500
+    assert r.json()["error"]["code"] == "misconfigured"
+
+
 def test_open_wraps_letter_with_correspondents_on_fallback(monkeypatch):
     # force the fallback path so the deterministic letter-wrap is exercised over HTTP
     class _Cheat:

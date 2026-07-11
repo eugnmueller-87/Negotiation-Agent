@@ -41,6 +41,17 @@ def client(monkeypatch):
     return TestClient(api.app)
 
 
+def test_prepare_degrades_when_research_is_misconfigured(client, monkeypatch):
+    # a bad HADES_URL makes HadesClient() raise on construction; /prepare must still return
+    # the extraction with brief=None, never 500 the whole endpoint (audit issue #9).
+    monkeypatch.setenv("HADES_URL", "http://not-https.example")  # non-https → ResearchUnavailable
+    r = client.post("/prepare", json={"contract_text": CONTRACT, "research": True})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["extraction"]["supplier_name"] == "Nordwerk Verpackung GmbH"
+    assert body["brief"] is None  # research degraded, extraction survived
+
+
 def test_intel_extracts_and_proposes(client):
     r = client.post("/intel", json={"contract_text": CONTRACT, "research": False})
     assert r.status_code == 200, r.text

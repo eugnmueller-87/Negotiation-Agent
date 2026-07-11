@@ -19,6 +19,7 @@ Run locally (after ``pip install -e ".[web]"``)::
 
 from __future__ import annotations
 
+import logging
 import os
 import time
 from pathlib import Path
@@ -57,6 +58,10 @@ from negotiation_agent.wire import (
     StepResponse,
     TranscriptView,
 )
+
+# One module logger. LLM/Hades degradations must leave a server-side trace — a silent
+# fallback (200 OK with a canned template forever) hides a rotated key or retired model.
+logger = logging.getLogger("negotiation_agent.api")
 
 app = FastAPI(title="Negotiation Agent — negotiation API", version="2.0")
 
@@ -129,8 +134,19 @@ def demo() -> FileResponse | JSONResponse:
 
 @app.post("/prepare", response_model=PreparedNegotiation)
 def prepare(req: PrepareRequest) -> PreparedNegotiation:
-    """Extract the opening position from a contract and brief the supplier."""
-    return prepare_negotiation(req.contract_text, researcher=HadesClient(), research=req.research)
+    """Extract the opening position from a contract and brief the supplier.
+
+    Research is best-effort: a misconfigured Hades (bad URL) must not 500 the whole
+    endpoint — the extraction still returns, the brief is just absent (the designed
+    ``brief=None`` degradation). So the client is built lazily and only when asked.
+    """
+    researcher: HadesClient | None = None
+    if req.research:
+        try:
+            researcher = HadesClient()
+        except ResearchUnavailable as e:
+            logger.warning("supplier research unavailable at /prepare: %s", e)
+    return prepare_negotiation(req.contract_text, researcher=researcher, research=req.research)
 
 
 # A PDF/DOCX upload is bulky (images) even though its text is small; cap the file at
@@ -164,12 +180,27 @@ async def extract_text_endpoint(file: UploadFile) -> JSONResponse:
         return _err("empty_file", "the uploaded file is empty", 400)
 
     try:
-        text = extract_file(file.filename or "", data)
+        result = extract_file(file.filename or "", data)
     except ExtractError as e:
         # 415 for an unsupported type, 422 for a readable-but-unusable file (scanned/corrupt)
         status = 415 if e.code == "unsupported_file_type" else 422
         return _err(e.code, str(e), status)
-    return JSONResponse(content={"text": text, "filename": file.filename or "", "chars": len(text)})
+    # truncated is surfaced so the human is never told a >2 MB-text read was complete
+    warning = (
+        "Only the first part of the document was read (it exceeded the analysis limit); "
+        "split it or paste the key clauses to analyse the rest."
+        if result.truncated
+        else ""
+    )
+    return JSONResponse(
+        content={
+            "text": result.text,
+            "filename": file.filename or "",
+            "chars": len(result.text),
+            "truncated": result.truncated,
+            "warning": warning,
+        }
+    )
 
 
 class IntelRequest(BaseModel):
@@ -385,7 +416,9 @@ def negotiate_open(req: OpenRequest) -> JSONResponse:
         message, audit = draft_and_guard(
             draft_client_factory(), brief, decision.approved_numbers, [], corr, category
         )
-    except Exception:  # noqa: BLE001 - degrade to fallback, never leak the LLM error
+    except Exception:  # noqa: BLE001 - degrade to fallback, never leak the LLM error to the client
+        # Log it: a persistent fallback (rotated key, retired model) must not be invisible.
+        logger.exception("buyer draft failed at /negotiate/open; using deterministic fallback")
         from negotiation_agent.fallback import render_fallback, wrap_letter
 
         message = wrap_letter(render_fallback(brief), corr)
@@ -416,8 +449,15 @@ def negotiate_step(req: StepRequest, request: Request) -> JSONResponse:
     if _rate_limited(f"{req.session_id}:{ip}", now):
         return _err("rate_limited", "too many requests — slow down", 429)
 
+    # Resolve the secret OUTSIDE the verify try — a missing secret is a server
+    # misconfiguration (500), not client tampering (400). Mirrors /negotiate/open.
     try:
-        mandate = verify_mandate(req.signed_mandate, _secret(), int(now))
+        secret = _secret()
+    except MandateError as e:
+        return _err("misconfigured", str(e), 500)
+
+    try:
+        mandate = verify_mandate(req.signed_mandate, secret, int(now))
     except MandateError as e:
         code = "mandate_expired" if "expired" in str(e) else "mandate_tampered"
         return _err(
@@ -472,6 +512,7 @@ def negotiate_step(req: StepRequest, request: Request) -> JSONResponse:
                 draft_client_factory(), brief, approved, _thread(req), corr, category
             )
         except Exception:  # noqa: BLE001 - degrade to fallback, never a 500 from the LLM
+            logger.exception("buyer draft failed at /negotiate/step; using deterministic fallback")
             from negotiation_agent.fallback import render_fallback, wrap_letter
 
             msg = wrap_letter(render_fallback(brief), corr)

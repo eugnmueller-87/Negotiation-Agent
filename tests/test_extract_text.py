@@ -69,9 +69,10 @@ def _make_docx(paragraphs: list[str]) -> bytes:
 
 # ── PDF ────────────────────────────────────────────────────────────────────────
 def test_extract_pdf_reads_the_text_layer():
-    text = extract_pdf(_make_pdf(CONTRACT_LINE))
-    assert "Acme GmbH" in text
-    assert "11.50" in text
+    result = extract_pdf(_make_pdf(CONTRACT_LINE))
+    assert "Acme GmbH" in result.text
+    assert "11.50" in result.text
+    assert result.truncated is False
 
 
 def test_scanned_pdf_raises_no_text_layer():
@@ -93,9 +94,9 @@ def test_corrupt_pdf_raises_corrupt_file():
 
 # ── DOCX ───────────────────────────────────────────────────────────────────────
 def test_extract_docx_reads_paragraphs():
-    text = extract_docx(_make_docx(["SUPPLY AGREEMENT", CONTRACT_LINE]))
-    assert "Acme GmbH" in text
-    assert "SUPPLY AGREEMENT" in text
+    result = extract_docx(_make_docx(["SUPPLY AGREEMENT", CONTRACT_LINE]))
+    assert "Acme GmbH" in result.text
+    assert "SUPPLY AGREEMENT" in result.text
 
 
 def test_corrupt_docx_raises_corrupt_file():
@@ -105,15 +106,25 @@ def test_corrupt_docx_raises_corrupt_file():
 
 # ── routing / plaintext ──────────────────────────────────────────────────────────
 def test_extract_file_routes_pdf_by_extension():
-    assert "Acme GmbH" in extract_file("contract.pdf", _make_pdf(CONTRACT_LINE))
+    assert "Acme GmbH" in extract_file("contract.pdf", _make_pdf(CONTRACT_LINE)).text
 
 
 def test_extract_file_routes_docx_by_extension():
-    assert "Acme GmbH" in extract_file("contract.docx", _make_docx([CONTRACT_LINE]))
+    assert "Acme GmbH" in extract_file("contract.docx", _make_docx([CONTRACT_LINE])).text
 
 
 def test_extract_file_decodes_plaintext():
-    assert extract_file("c.txt", CONTRACT_LINE.encode("utf-8")) == CONTRACT_LINE
+    assert extract_file("c.txt", CONTRACT_LINE.encode("utf-8")).text == CONTRACT_LINE
+
+
+def test_oversized_text_is_flagged_truncated():
+    from negotiation_agent.extract_text import _MAX_TEXT_CHARS
+
+    # a plain-text file past the cap must come back truncated=True — never a silent cut that
+    # the /extract-text response would report as a complete read (audit issue #3).
+    result = extract_file("big.txt", ("x" * (_MAX_TEXT_CHARS + 100)).encode("utf-8"))
+    assert result.truncated is True
+    assert len(result.text) == _MAX_TEXT_CHARS
 
 
 def test_extract_file_rejects_unknown_type():

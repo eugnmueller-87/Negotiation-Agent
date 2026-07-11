@@ -90,4 +90,19 @@ def test_empty_file_is_400(client):
 def test_plaintext_passthrough(client):
     r = client.post("/extract-text", files={"file": ("c.txt", CONTRACT.encode(), "text/plain")})
     assert r.status_code == 200
-    assert r.json()["text"] == CONTRACT
+    body = r.json()
+    assert body["text"] == CONTRACT
+    assert body["truncated"] is False
+    assert body["warning"] == ""
+
+
+def test_oversized_upload_reports_truncation(client):
+    from negotiation_agent.extract_text import _MAX_TEXT_CHARS
+
+    big = ("x" * (_MAX_TEXT_CHARS + 100)).encode("utf-8")
+    r = client.post("/extract-text", files={"file": ("big.txt", big, "text/plain")})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["truncated"] is True  # the cut is surfaced, not silent
+    assert body["warning"]  # a human-readable message is present
+    assert len(body["text"]) == _MAX_TEXT_CHARS
