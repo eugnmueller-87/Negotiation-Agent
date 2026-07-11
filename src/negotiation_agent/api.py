@@ -83,6 +83,31 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Defense-in-depth security headers on every response (audit #10). The demo is served
+# same-origin and renders untrusted contract/supplier text; a CSP contains any future
+# escaping gap, nosniff blocks MIME-sniffing, frame-ancestors 'none' blocks clickjacking.
+# The page uses one inline <script>, so script-src allows 'unsafe-inline'.
+_SECURITY_HEADERS = {
+    "Content-Security-Policy": (
+        "default-src 'self'; script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
+        "connect-src 'self' *; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ),
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer",
+    "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+}
+
+
+@app.middleware("http")
+async def _security_headers(request: Request, call_next):  # type: ignore[no-untyped-def]
+    response = await call_next(request)
+    for name, value in _SECURITY_HEADERS.items():
+        response.headers.setdefault(name, value)
+    return response
+
+
 # The v2 demo is served from this same app (same-origin, one deploy, no CORS needed
 # in the common case). Path is resolved relative to the repo root at runtime.
 _DEMO_HTML = Path(__file__).resolve().parents[2] / "demo" / "peitho-v2.html"
@@ -630,7 +655,13 @@ def negotiate_step(req: StepRequest, request: Request) -> JSONResponse:
 
 
 @app.get("/health")
-def health() -> dict[str, object]:
+def health(request: Request) -> dict[str, object]:
+    """Liveness. Anonymous callers get only ``{"status": "ok"}``; the diagnostic detail
+    (model IDs, KB size, config flags — fingerprinting aids) is released only under the same
+    god-view token that gates buyer internals (audit #12)."""
+    if not _godview(request):
+        return {"status": "ok"}
+
     from negotiation_agent.knowledge.retrieve import _load_index
     from negotiation_agent.llm import BUYER_MODEL, SUPPLIER_MODEL
 

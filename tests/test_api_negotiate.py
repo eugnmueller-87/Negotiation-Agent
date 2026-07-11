@@ -330,8 +330,28 @@ def test_godview_fails_closed_with_no_token_configured(client, monkeypatch):
     assert r.json()["turn"]["internal"] is None
 
 
-def test_health_reports_models(client):
+def test_security_headers_present_on_responses(client):
+    # audit #10: defense-in-depth headers on every response
     r = client.get("/health")
+    assert r.headers["X-Content-Type-Options"] == "nosniff"
+    assert r.headers["X-Frame-Options"] == "DENY"
+    assert "Content-Security-Policy" in r.headers
+    assert "frame-ancestors 'none'" in r.headers["Content-Security-Policy"]
+
+
+def test_health_is_minimal_for_anonymous_callers(client):
+    # audit #12: anonymous /health returns only liveness — no model IDs / KB size to fingerprint
+    r = client.get("/health")
+    assert r.status_code == 200
+    body = r.json()
+    assert body == {"status": "ok"}
+    assert "buyer_model" not in body
+
+
+def test_health_reports_details_under_the_godview_token(client, monkeypatch):
+    # the diagnostic detail is released only to a caller holding the god-view token
+    monkeypatch.setenv("PEITHO_GODVIEW_TOKEN", "tok")
+    r = client.get("/health", headers={"X-Peitho-Godview": "tok"})
     assert r.status_code == 200
     assert r.json()["buyer_model"] == "claude-opus-4-8"
     assert r.json()["supplier_model"] == "claude-haiku-4-5"

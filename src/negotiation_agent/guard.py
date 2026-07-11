@@ -34,6 +34,16 @@ _LEAK_PHRASES = (
     "concession curve",
     "acceptance threshold",
     "utility score",
+    # deadline / room-of-movement leakage (audit #9): the schedule pressure and floor
+    # proximity are buyer-internal leverage the counterparty must not read in prose.
+    "final round",
+    "last round",
+    "our final offer",
+    "our walk-away",
+    "our floor",
+    "room to move before",
+    "rounds remaining",
+    "rounds left",
 )
 
 # First-person GIVING frames — a concession of value not in the allowlist. Scoped to

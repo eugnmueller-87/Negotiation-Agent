@@ -256,7 +256,10 @@ def turn_result(
 ) -> TurnResult:
     """Assemble the decision echo. ``include_internal`` gates the buyer-private block."""
     brief = build_move_brief(decision, envelope, prev_counter, max_rounds, priorities=priorities)
-    bar_fills = _bar_fills(decision, envelope)
+    # bar_fills is per-term BUYER utility — a buyer-private figure the confidentiality line
+    # names as internal. Gate it with the same god-view flag as InternalState (audit #8) so it
+    # never ships to a supplier view; the coarse buyer_satisfaction flag on the brief stays public.
+    bar_fills = _bar_fills(decision, envelope) if include_internal else {}
     internal = None
     if include_internal:
         internal = InternalState(
