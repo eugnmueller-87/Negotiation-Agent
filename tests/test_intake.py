@@ -102,6 +102,20 @@ def test_redos_pathological_input_returns_fast():
     assert isinstance(ex.terms, list)
 
 
+def test_redos_comma_run_is_linear():
+    import time
+
+    # THE real ReDoS vector (audit SEC-1): a long "123,123,123,…" run with no trailing '%'
+    # made the unanchored _REBATE_RE retry a greedy consume-then-fail at every position —
+    # O(N²), ~28 s at 64 KB. The (?<![\d.,]) lookbehind must keep it linear.
+    payload = ",".join(["123"] * 16000) + " zz"  # ~64 KB, no match
+    t0 = time.perf_counter()
+    ex = extract_contract(payload)
+    elapsed = time.perf_counter() - t0
+    assert elapsed < 1.0, f"comma-run extraction took {elapsed:.2f}s — _REBATE_RE ReDoS regressed"
+    assert isinstance(ex.terms, list)
+
+
 def test_input_is_size_capped():
     from negotiation_agent.intake import _MAX_CONTRACT_CHARS
 

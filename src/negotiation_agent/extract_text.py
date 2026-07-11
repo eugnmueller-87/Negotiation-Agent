@@ -18,6 +18,7 @@ the container; they do not evaluate embedded scripts.
 from __future__ import annotations
 
 import io
+import zipfile
 
 from pydantic import BaseModel
 
@@ -121,12 +122,46 @@ def extract_pdf(data: bytes) -> ExtractResult:
     return _cap(text)
 
 
+# A .docx is a ZIP. python-docx (via ZipFile.read) materializes each member fully decompressed
+# in RAM before any text cap runs, so a "decompression bomb" — a tiny compressed file that
+# expands to gigabytes — OOM-kills the process. Bound the DECOMPRESSED size (the 20 MB upload
+# cap only bounds compressed bytes) and the compression ratio before handing bytes to the parser.
+_MAX_DECOMPRESSED_BYTES = 100 * 1024 * 1024  # 100 MB total — a real .docx is far under this
+_MAX_COMPRESS_RATIO = 200  # uncompressed/compressed; well above a normal doc, far below a bomb
+
+
+def _guard_zip_bomb(data: bytes) -> None:
+    """Reject a decompression-bomb archive by inspecting the central directory before parsing.
+
+    Uses only the ZIP metadata (``file_size``/``compress_size``) — no member is decompressed —
+    so this is cheap and runs before python-docx opens the file. Raises :class:`CorruptFile`
+    if the total decompressed size or any member's compression ratio is out of bounds.
+    """
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as zf:
+            infos = zf.infolist()
+            total = sum(i.file_size for i in infos)
+            if total > _MAX_DECOMPRESSED_BYTES:
+                raise CorruptFile(
+                    "the .docx decompresses to too much data — it may be a decompression bomb."
+                )
+            for i in infos:
+                if i.compress_size > 0 and i.file_size / i.compress_size > _MAX_COMPRESS_RATIO:
+                    raise CorruptFile(
+                        "the .docx has an implausible compression ratio — refusing to parse it."
+                    )
+    except zipfile.BadZipFile as e:
+        raise CorruptFile("the .docx could not be read — it is not a valid Word file") from e
+
+
 def extract_docx(data: bytes) -> ExtractResult:
     """Extract paragraph + table text from a Word .docx. Raises on a non-docx/corrupt file."""
     try:
         import docx  # python-docx
     except ImportError as e:  # pragma: no cover - exercised only without the extra
         raise ExtractError("DOCX support needs the 'web' extra (python-docx)") from e
+
+    _guard_zip_bomb(data)  # reject a decompression bomb BEFORE the parser reads any member
 
     try:
         document = docx.Document(io.BytesIO(data))

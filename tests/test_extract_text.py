@@ -76,6 +76,20 @@ def test_corrupt_docx_raises_corrupt_file():
         extract_docx(b"PK\x03\x04 not really a docx zip")
 
 
+def test_docx_decompression_bomb_is_rejected():
+    import zipfile
+
+    # a tiny compressed .docx whose member decompresses to ~200 MB must be refused BEFORE the
+    # parser reads it — else it OOM-kills the worker (audit SEC-2). The guard reads only the
+    # ZIP central directory, so no member is decompressed to make this decision.
+    bomb = io.BytesIO()
+    with zipfile.ZipFile(bomb, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("word/document.xml", b"A" * (200 * 1024 * 1024))
+    assert len(bomb.getvalue()) < 1_000_000  # tiny on disk
+    with pytest.raises(CorruptFile):
+        extract_docx(bomb.getvalue())
+
+
 # ── routing / plaintext ──────────────────────────────────────────────────────────
 def test_extract_file_routes_pdf_by_extension(make_text_pdf):
     assert "Acme GmbH" in extract_file("contract.pdf", make_text_pdf(CONTRACT_LINE)).text

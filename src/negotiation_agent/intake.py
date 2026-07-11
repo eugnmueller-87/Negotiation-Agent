@@ -101,9 +101,12 @@ _PAYMENT_RE = re.compile(
 )
 _MONTHS_RE = re.compile(r"\b([0-9]{1,3})\s*(?:month|months|mo)\b", re.I)
 # the (?<![\d.,]) stops a match from starting mid-token, so "1.2.3 units" is rejected
-# whole (no spurious "2.3") rather than backtracking into the malformed tail.
+# whole (no spurious "2.3") rather than backtracking into the malformed tail. It is ALSO the
+# ReDoS guard: without it an unanchored _NUM re-tries its greedy consume-then-fail at every
+# position over a long digit/comma run — O(N²), ~28 s at 64 KB. The lookbehind fails a
+# match-start mid-token in O(1), collapsing the scan to linear (verified 28 s → 4 ms).
 _VOLUME_RE = re.compile(rf"(?<![\d.,])({_NUM})\s*(?:units|pcs|pieces|stück)\b", re.I)
-_REBATE_RE = re.compile(rf"({_NUM})\s*%\s*(?:rebate|discount|rabatt)", re.I)
+_REBATE_RE = re.compile(rf"(?<![\d.,])({_NUM})\s*%\s*(?:rebate|discount|rabatt)", re.I)
 _SUPPLIER_RE = re.compile(
     r"(?:supplier|vendor|lieferant|seller)\s*[:\-]?\s*"
     r"([A-Z][\w&.\- ]{2,60}?(?:GmbH|AG|Ltd|Inc|B\.V\.|S\.A\.|SE|KG))",
