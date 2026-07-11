@@ -67,6 +67,15 @@ class _FakeDrafter:
         return "..."
 
 
+@pytest.fixture(autouse=True)
+def _reset_rate_limiter():
+    # the rate-limit counters are module-global; clear them so one test's requests can't
+    # trip the limiter in the next (the window is IP-keyed and all tests share one IP).
+    api._rate_hits.clear()
+    yield
+    api._rate_hits.clear()
+
+
 @pytest.fixture
 def client(monkeypatch):
     monkeypatch.setenv("PEITHO_MANDATE_SECRET", SECRET)
@@ -112,6 +121,21 @@ def test_step_folds_and_counters(client):
     assert body["turn"]["internal"] is None
     # the redacted supplier view carries no reservation floor
     assert "0.6" not in r.text or "reservation" not in r.text
+
+
+def test_open_is_rate_limited_per_ip_not_session(client, monkeypatch):
+    # cost-bearing /open is IP-rate-limited; rotating session_id must NOT dodge the cap
+    # (the old limiter keyed on the client-chosen session_id — audit issue #4).
+    monkeypatch.setattr(api, "_RATE_PER_MIN", 3)
+    api._rate_hits.clear()
+    codes = [
+        client.post(
+            "/negotiate/open", json={"mandate": MANDATE, "session_id": f"rotate-{i}"}
+        ).status_code
+        for i in range(6)
+    ]
+    assert codes.count(429) >= 1  # rotating the session_id did not escape the per-IP cap
+    assert 429 in codes[3:]  # the cap kicks in after the limit
 
 
 def test_open_rejects_unbounded_max_rounds(client):

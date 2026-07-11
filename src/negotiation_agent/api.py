@@ -28,7 +28,7 @@ try:
     from fastapi import FastAPI, Request, UploadFile
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import FileResponse, JSONResponse
-    from pydantic import BaseModel
+    from pydantic import BaseModel, Field
 except ImportError as e:  # pragma: no cover - exercised only without the extra
     raise ImportError(
         "The HTTP API needs the 'web' extra. Install it with: pip install -e '.[web]'"
@@ -65,13 +65,19 @@ logger = logging.getLogger("negotiation_agent.api")
 
 app = FastAPI(title="Negotiation Agent — negotiation API", version="2.0")
 
-# CORS: the negotiation endpoints are safe to call cross-origin — every request
-# carries a server-signed mandate, the engine is authority, and the abuse gates
-# (rate limit, TTL) bound cost. Allowing all origins lets the demo be served from
-# anywhere (or opened as a file) while still hitting the deployed backend.
+# CORS origins are env-configurable. Set PEITHO_ALLOWED_ORIGINS to a comma-separated
+# allowlist (e.g. "https://peitho.example,https://www.peitho.example") to lock the API to
+# known front-ends. Unset defaults to "*" so the demo still works opened as a file:// page;
+# a public deployment should set the allowlist. The rate limits below are the real cost gate.
+_origins_env = os.getenv("PEITHO_ALLOWED_ORIGINS", "").strip()
+_allowed_origins = [o.strip() for o in _origins_env.split(",") if o.strip()] or ["*"]
+if _allowed_origins == ["*"]:
+    logger.warning(
+        "CORS is open to all origins — set PEITHO_ALLOWED_ORIGINS to lock the API to your front-end"
+    )
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_allowed_origins,
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
@@ -83,7 +89,10 @@ _DEMO_HTML = Path(__file__).resolve().parents[2] / "demo" / "peitho-v2.html"
 # Abuse gates (env-tunable). In-memory counters are correct for a single instance;
 # a multi-replica deploy needs Redis (documented in the architecture doc, §9).
 _MANDATE_TTL = int(os.getenv("PEITHO_MANDATE_TTL", "3600"))
+# Per-IP requests/min. The default endpoints (draft one Opus message) get the standard cap;
+# the research endpoints (a paid Hades call, up to 150s) get a stricter one.
 _RATE_PER_MIN = int(os.getenv("PEITHO_RATE_PER_MIN", "20"))
+_RESEARCH_RATE_PER_MIN = int(os.getenv("PEITHO_RESEARCH_RATE_PER_MIN", "4"))
 _rate_hits: dict[str, list[float]] = {}
 
 
@@ -104,11 +113,34 @@ def _secret() -> str:
     return secret
 
 
-def _rate_limited(session_id: str, now: float) -> bool:
-    window = [t for t in _rate_hits.get(session_id, []) if now - t < 60.0]
+def _client_ip(request: Request) -> str:
+    """The caller's IP for rate-limit keying. Behind Railway's proxy the real client is the
+    first hop in X-Forwarded-For; fall back to the socket peer. Never a client-chosen value."""
+    fwd = request.headers.get("x-forwarded-for", "")
+    if fwd:
+        return fwd.split(",")[0].strip()
+    return request.client.host if request.client else "?"
+
+
+def _rate_limited(bucket: str, now: float, *, limit: int) -> bool:
+    """Sliding 60s window per key. Keys are IP-scoped (never a client-chosen session_id) so
+    the cap can't be dodged by rotating ids. Evicts stale keys so the dict can't grow forever."""
+    # Opportunistic eviction: drop any key whose entire window has aged out (audit issue #19).
+    if len(_rate_hits) > 4096:
+        for key in [k for k, ts in _rate_hits.items() if all(now - t >= 60.0 for t in ts)]:
+            del _rate_hits[key]
+    window = [t for t in _rate_hits.get(bucket, []) if now - t < 60.0]
     window.append(now)
-    _rate_hits[session_id] = window
-    return len(window) > _RATE_PER_MIN
+    _rate_hits[bucket] = window
+    return len(window) > limit
+
+
+def _rate_gate(request: Request, route: str, *, limit: int) -> JSONResponse | None:
+    """Apply the per-IP rate limit for ``route``; return a 429 response if exceeded, else None.
+    Every cost-bearing endpoint calls this before doing any LLM/Hades/parse work."""
+    if _rate_limited(f"{route}:{_client_ip(request)}", time.time(), limit=limit):
+        return _err("rate_limited", "too many requests — slow down", 429)
+    return None
 
 
 def _err(code: str, message: str, status: int) -> JSONResponse:
@@ -118,7 +150,7 @@ def _err(code: str, message: str, status: int) -> JSONResponse:
 
 
 class PrepareRequest(BaseModel):
-    contract_text: str
+    contract_text: str = Field(max_length=2_000_000)  # matches the intake extractor's cap
     research: bool = True
 
 
@@ -132,14 +164,17 @@ def demo() -> FileResponse | JSONResponse:
     )
 
 
-@app.post("/prepare", response_model=PreparedNegotiation)
-def prepare(req: PrepareRequest) -> PreparedNegotiation:
+@app.post("/prepare", response_model=None)
+def prepare(req: PrepareRequest, request: Request) -> PreparedNegotiation | JSONResponse:
     """Extract the opening position from a contract and brief the supplier.
 
     Research is best-effort: a misconfigured Hades (bad URL) must not 500 the whole
     endpoint — the extraction still returns, the brief is just absent (the designed
     ``brief=None`` degradation). So the client is built lazily and only when asked.
     """
+    gate = _rate_gate(request, "prepare", limit=_RESEARCH_RATE_PER_MIN)
+    if gate is not None:
+        return gate
     researcher: HadesClient | None = None
     if req.research:
         try:
@@ -155,13 +190,17 @@ _MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 
 
 @app.post("/extract-text", response_model=None)
-async def extract_text_endpoint(file: UploadFile) -> JSONResponse:
+async def extract_text_endpoint(file: UploadFile, request: Request) -> JSONResponse:
     """Extract the text from an uploaded contract file (PDF / Word .docx / plain text).
 
     The frontend sends the raw file; we return ``{"text": ...}`` which it then feeds to
     ``/intel`` — the same path a paste takes. Scanned PDFs (no text layer) and corrupt
     files come back as a typed 4xx with a human-safe message, never a silent empty string.
     """
+    gate = _rate_gate(request, "extract-text", limit=_RATE_PER_MIN)
+    if gate is not None:
+        return gate
+
     from starlette.concurrency import run_in_threadpool
 
     from negotiation_agent.extract_text import ExtractError, extract_file
@@ -208,18 +247,22 @@ async def extract_text_endpoint(file: UploadFile) -> JSONResponse:
 
 
 class IntelRequest(BaseModel):
-    contract_text: str
+    contract_text: str = Field(max_length=2_000_000)  # matches the intake extractor's cap
     research: bool = True
 
 
 @app.post("/intel", response_model=None)
-def intel(req: IntelRequest) -> JSONResponse:
+def intel(req: IntelRequest, request: Request) -> JSONResponse:
     """Deep-extract a contract, research the supplier, and propose mandate adjustments.
 
     The expensive, once-per-upload call: regex extraction (Zone A + B) + Hades brief +
     the deterministic rule engine. Returns the intelligence picture, the brief, and the
     proposed (human-reviewable) adjustments. Never shapes silently — the human approves.
     """
+    gate = _rate_gate(request, "intel", limit=_RESEARCH_RATE_PER_MIN)
+    if gate is not None:
+        return gate
+
     import datetime as _dt
 
     from negotiation_agent.intelligence import prepare_intelligence
@@ -285,7 +328,7 @@ def reshape(req: ReshapeRequest) -> JSONResponse:
 
 
 class TerminateRequest(BaseModel):
-    contract_text: str
+    contract_text: str = Field(max_length=2_000_000)  # matches the intake extractor's cap
     buyer_name: str = "[Buyer]"
     contract_reference: str | None = None
     intent: str = "non_renewal"  # "non_renewal" | "terminate"
@@ -397,8 +440,11 @@ def _supplier_from_text(text: str) -> str:
 
 
 @app.post("/negotiate/open")
-def negotiate_open(req: OpenRequest) -> JSONResponse:
+def negotiate_open(req: OpenRequest, request: Request) -> JSONResponse:
     """Sign the mandate and draft the buyer's opening anchor."""
+    gate = _rate_gate(request, "open", limit=_RATE_PER_MIN)
+    if gate is not None:
+        return gate
     now = int(time.time())
     try:
         signed = sign_mandate(req.mandate, req.session_id, now, now + _MANDATE_TTL, _secret())
@@ -448,10 +494,12 @@ def negotiate_open(req: OpenRequest) -> JSONResponse:
 @app.post("/negotiate/step")
 def negotiate_step(req: StepRequest, request: Request) -> JSONResponse:
     """Advance one turn: gate, verify, fold, draft, guard, redraft, release."""
+    # Key the limit on IP, not the client-chosen session_id (which was trivially rotatable
+    # to dodge the cap — audit issue #4). One Opus draft per step, so the standard cap.
+    gate = _rate_gate(request, "step", limit=_RATE_PER_MIN)
+    if gate is not None:
+        return gate
     now = time.time()
-    ip = request.client.host if request.client else "?"
-    if _rate_limited(f"{req.session_id}:{ip}", now):
-        return _err("rate_limited", "too many requests — slow down", 429)
 
     # Resolve the secret OUTSIDE the verify try — a missing secret is a server
     # misconfiguration (500), not client tampering (400). Mirrors /negotiate/open.

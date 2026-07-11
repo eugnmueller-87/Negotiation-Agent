@@ -45,6 +45,13 @@ def _pdf(text: str) -> bytes:
     return pdf
 
 
+@pytest.fixture(autouse=True)
+def _reset_rate_limiter():
+    api._rate_hits.clear()  # module-global counters — isolate the per-IP cap per test
+    yield
+    api._rate_hits.clear()
+
+
 @pytest.fixture
 def client(monkeypatch):
     monkeypatch.setenv("PEITHO_MANDATE_SECRET", "t")
