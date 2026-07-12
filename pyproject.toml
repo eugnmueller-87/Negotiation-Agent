@@ -49,6 +49,11 @@ web = [
     "pypdf>=4.0",
     "python-docx>=1.1",
     "python-multipart>=0.0.9",
+    # Contract PDF → stable, deep-linkable text ANCHORS for the due-diligence cockpit
+    # (negotiation_agent.anchor): PyMuPDF gives geometric text blocks with a stable per-page
+    # block index, so every finding's quote can be verified back to a specific block. Single
+    # wheel, no system binary, Nixpacks-clean. pypdf (above) stays the flat-text extractor.
+    "pymupdf>=1.24",
 ]
 
 [project.urls]
@@ -101,7 +106,7 @@ exclude = ['src/negotiation_agent/(api|llm)\.py']
 # The Anthropic SDK doesn't ship a stub mypy resolves here; ignore its missing
 # import in the web-extra job (the import is guarded and only runs with the extra).
 [[tool.mypy.overrides]]
-module = ["anthropic", "anthropic.*"]
+module = ["anthropic", "anthropic.*", "fitz"]
 ignore_missing_imports = true
 
 [tool.ruff]

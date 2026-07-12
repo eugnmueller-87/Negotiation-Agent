@@ -16,3 +16,7 @@ anthropic>=0.40
 pypdf>=4.0
 python-docx>=1.1
 python-multipart>=0.0.9
+# Contract PDF → stable, deep-linkable text anchors (negotiation_agent.anchor): PyMuPDF
+# gives per-page geometric text blocks so every finding's quote can be verified back to a
+# specific block. Single wheel, no system binary, Nixpacks-clean.
+pymupdf>=1.24

@@ -46,6 +46,35 @@ def make_text_pdf() -> Callable[[str], bytes]:
 
 
 @pytest.fixture
+def make_blocks_pdf() -> Callable[[list[list[str]]], bytes]:
+    """Return a builder for a multi-page PDF from ``pages`` (a list of pages, each a list of
+    block strings). Uses PyMuPDF so each string becomes its own geometric text block — the
+    input the anchoring layer decomposes. Skips the whole test module if pymupdf isn't installed.
+    """
+    fitz = pytest.importorskip("fitz")
+
+    def _build(pages: list[list[str]]) -> bytes:
+        doc = fitz.open()
+        for blocks in pages:
+            page = doc.new_page()
+            y = 72.0
+            for text in blocks:
+                # insert_textbox WRAPS within the rect (insert_text clips at the page edge,
+                # truncating long clauses) — so a full paragraph lands intact in one block,
+                # the way a real contract PDF stores it. Height grows with the wrapped length.
+                lines = max(1, len(text) // 80 + 1)
+                height = 16 * lines + 8
+                rect = fitz.Rect(72, y, 540, y + height)
+                page.insert_textbox(rect, text, fontsize=10)
+                y += height + 12  # gap so fitz keeps consecutive paragraphs as distinct blocks
+        data: bytes = doc.tobytes()
+        doc.close()
+        return data
+
+    return _build
+
+
+@pytest.fixture
 def simple_envelope() -> Envelope:
     """Two continuous terms (price heavy, rebate light) — easy to reason about."""
     return Envelope(
