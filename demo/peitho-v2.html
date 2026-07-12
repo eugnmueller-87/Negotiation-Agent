@@ -187,6 +187,125 @@
   .intel-apply .meta{font-size:12px;color:var(--ink-3);}
   .intel-none{margin-top:12px;font-size:12.5px;color:var(--ink-3);padding:10px 13px;background:var(--surface-2);border-radius:9px;}
 
+  /* ── DUE-DILIGENCE COCKPIT ─────────────────────────────── */
+  /* severity + status color tokens (semantic, separate from the buyer/supplier accents) */
+  .sev-critical{--sev:var(--crit);} .sev-high{--sev:var(--warn);}
+  .sev-medium{--sev:var(--buyer);} .sev-low{--sev:var(--ink-3);}
+
+  .cx-hd{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:6px;}
+  .cx-hd h2{font-size:22px;}
+  .cx-file{font-family:var(--mono);font-size:12px;color:var(--ink-2);}
+  .cx-meta{font-family:var(--mono);font-size:11.5px;color:var(--ink-3);}
+  .cx-example{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;
+    padding:2px 8px;border-radius:5px;background:color-mix(in srgb,var(--buyer) 12%,transparent);color:var(--buyer);}
+  .cx-sub{font-size:12.5px;color:var(--ink-3);margin:0 0 16px;line-height:1.5;}
+
+  /* the legal-review gate banner — shows its RULE, not just a conclusion */
+  .gate{display:flex;gap:13px;align-items:flex-start;padding:13px 16px;border-radius:12px;margin-bottom:18px;
+    border:1px solid color-mix(in srgb,var(--crit) 40%,transparent);background:color-mix(in srgb,var(--crit) 8%,transparent);}
+  .gate.ok{border-color:color-mix(in srgb,var(--good) 40%,transparent);background:color-mix(in srgb,var(--good) 8%,transparent);}
+  .gate svg{flex:none;color:var(--crit);margin-top:1px;} .gate.ok svg{color:var(--good);}
+  .gate-body{flex:1;}
+  .gate-title{font-weight:600;font-size:14px;color:var(--ink);}
+  .gate-rule{font-size:12.5px;color:var(--ink-2);margin-top:2px;}
+  .gate-owner{font-family:var(--mono);font-size:11px;color:var(--ink-3);margin-top:4px;}
+  .gate-counts{display:flex;gap:8px;flex:none;align-items:center;}
+  .cx-pill{font-family:var(--mono);font-size:11px;font-weight:600;padding:3px 9px;border-radius:999px;
+    background:var(--surface-2);border:1px solid var(--line);color:var(--ink-2);white-space:nowrap;}
+  .cx-pill.critical{background:color-mix(in srgb,var(--crit) 14%,transparent);color:var(--crit);border-color:transparent;}
+  .cx-pill.high{background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn);border-color:transparent;}
+  .cx-pill.medium{background:color-mix(in srgb,var(--buyer) 14%,transparent);color:var(--buyer);border-color:transparent;}
+
+  /* tabs: risk review / commercial */
+  .cx-tabs{display:flex;gap:4px;margin-bottom:14px;border-bottom:1px solid var(--line);}
+  .cx-tab{background:none;border:none;padding:8px 14px;font-size:13.5px;font-weight:600;color:var(--ink-3);
+    border-bottom:2px solid transparent;margin-bottom:-1px;}
+  .cx-tab.on{color:var(--ink);border-bottom-color:var(--buyer);}
+
+  /* two-pane layout: cards left, evidence right */
+  .cx-split{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px;align-items:start;}
+  @media (max-width:900px){ .cx-split{grid-template-columns:1fr;} }
+
+  .cx-filters{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;}
+  .cx-chip{font-size:12px;padding:4px 11px;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:var(--ink-2);}
+  .cx-chip.on{background:var(--ink);color:var(--paper);border-color:var(--ink);}
+
+  .cx-cards{display:flex;flex-direction:column;gap:10px;}
+  .rcard{border:1px solid var(--line);border-left:3px solid var(--sev,var(--ink-3));border-radius:11px;
+    background:var(--surface);padding:12px 14px;cursor:pointer;transition:border-color .15s,box-shadow .15s;}
+  .rcard:hover{box-shadow:0 2px 10px rgba(0,0,0,.06);}
+  .rcard.sel{border-color:var(--buyer);box-shadow:0 0 0 2px color-mix(in srgb,var(--buyer) 25%,transparent);}
+  .rcard.unver{border-left-style:dashed;opacity:.9;}
+  .rcard-top{display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;}
+  .rsev{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+    padding:2px 7px;border-radius:5px;background:color-mix(in srgb,var(--sev) 16%,transparent);color:var(--sev);}
+  .rcat{font-family:var(--mono);font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-3);}
+  .rcard-sp{flex:1;}
+  .ranchor{font-family:var(--mono);font-size:11px;color:var(--buyer);display:inline-flex;align-items:center;gap:4px;
+    padding:2px 7px;border-radius:5px;background:color-mix(in srgb,var(--buyer) 10%,transparent);border:none;}
+  .ranchor:hover{background:color-mix(in srgb,var(--buyer) 20%,transparent);}
+  .rverify{font-family:var(--mono);font-size:10px;display:inline-flex;align-items:center;gap:3px;}
+  .rverify.ok{color:var(--good);} .rverify.no{color:var(--warn);}
+  .rcard-title{font-weight:600;font-size:13.5px;line-height:1.35;}
+  .rcard-hurts{font-size:12.5px;color:var(--ink-2);line-height:1.5;margin-top:5px;}
+  .rraise{font-family:var(--mono);font-size:10.5px;color:var(--ink-3);margin-top:6px;}
+  .rraise b{color:var(--warn);font-weight:600;}
+  .rpos{margin-top:8px;font-size:12px;display:flex;flex-direction:column;gap:3px;}
+  .rpos-line{display:flex;gap:7px;} .rpos-k{color:var(--good);font-weight:600;flex:none;} .rpos-v{color:var(--ink-2);}
+
+  /* evidence pane — the in-tool document viewer */
+  .evid{border:1px solid var(--line);border-radius:12px;background:var(--surface);position:sticky;top:78px;overflow:hidden;}
+  .evid-hd{padding:10px 14px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;background:var(--surface-2);}
+  .evid-hd .evid-doc{font-family:var(--mono);font-size:11.5px;color:var(--ink-2);}
+  .evid-hd .evid-nav{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--ink-3);}
+  .evid-scroll{max-height:560px;overflow-y:auto;padding:0 4px;background:var(--paper);}
+  .evid-page{margin:12px 8px;background:var(--surface);border:1px solid var(--line);border-radius:8px;
+    box-shadow:0 1px 4px rgba(0,0,0,.05);padding:16px 18px;}
+  .evid-pagenum{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--ink-3);margin-bottom:10px;text-align:right;}
+  .evid-block{font-size:12.5px;line-height:1.6;color:var(--ink-2);padding:6px 8px;border-radius:6px;white-space:pre-wrap;
+    scroll-margin-top:60px;transition:background .3s;}
+  .evid-block:first-line{font-weight:600;}
+  .evid-block.flash{background:color-mix(in srgb,var(--warn) 26%,transparent);}
+  .evid-block.risk{border-left:2px solid var(--sev,var(--warn));background:color-mix(in srgb,var(--sev,var(--warn)) 7%,transparent);}
+  .evid-empty{padding:40px 20px;text-align:center;color:var(--ink-3);font-size:13px;}
+
+  /* commercial / economics tab */
+  .econ-hero{display:flex;gap:22px;flex-wrap:wrap;padding:16px 18px;border:1px solid var(--line);border-radius:12px;
+    background:var(--surface);margin-bottom:16px;}
+  .econ-stat{display:flex;flex-direction:column;gap:3px;}
+  .econ-stat .k{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);}
+  .econ-stat .v{font-family:var(--mono);font-size:22px;font-weight:600;color:var(--ink);}
+  .econ-sec{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin:18px 0 9px;}
+  .econ-buildup{display:flex;flex-direction:column;gap:1px;background:var(--line);border-radius:10px;overflow:hidden;border:1px solid var(--line);}
+  .econ-row{display:flex;align-items:baseline;gap:12px;padding:10px 14px;background:var(--surface);}
+  .econ-row .lbl{flex:1;font-size:13px;color:var(--ink);} .econ-row .note{font-size:11.5px;color:var(--ink-3);}
+  .econ-row .amt{font-family:var(--mono);font-size:14px;font-weight:600;color:var(--ink);}
+  .econ-row.total{background:var(--surface-2);} .econ-row.total .lbl{font-weight:600;}
+  .erisk{display:flex;gap:12px;padding:12px 14px;border:1px solid var(--line);border-left:3px solid var(--sev,var(--ink-3));
+    border-radius:10px;background:var(--surface);margin-bottom:9px;}
+  .erisk-body{flex:1;} .erisk-top{display:flex;align-items:center;gap:9px;margin-bottom:4px;}
+  .erisk-lbl{font-weight:600;font-size:13px;} .erisk-detail{font-size:12.5px;color:var(--ink-2);line-height:1.5;}
+  .erisk-lever{font-size:12px;color:var(--good);margin-top:6px;} .erisk-lever b{font-weight:600;}
+
+  /* Ask-Opus box */
+  .ask{border:1px solid var(--line);border-radius:12px;background:var(--surface);margin-top:18px;overflow:hidden;}
+  .ask-hd{padding:11px 15px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:9px;background:var(--surface-2);}
+  .ask-hd b{font-size:13.5px;} .ask-hd .ask-model{font-family:var(--mono);font-size:11px;color:var(--ink-3);margin-left:auto;}
+  .ask-thread{max-height:280px;overflow-y:auto;padding:14px 15px;display:flex;flex-direction:column;gap:12px;}
+  .ask-empty{color:var(--ink-3);font-size:12.5px;line-height:1.6;}
+  .ask-q{align-self:flex-end;max-width:82%;background:color-mix(in srgb,var(--buyer) 12%,transparent);
+    color:var(--ink);padding:8px 12px;border-radius:11px 11px 3px 11px;font-size:13px;}
+  .ask-a{align-self:flex-start;max-width:88%;font-size:13px;color:var(--ink);line-height:1.55;}
+  .ask-a .ask-cite{font-family:var(--mono);font-size:10.5px;color:var(--buyer);background:color-mix(in srgb,var(--buyer) 10%,transparent);
+    padding:1px 6px;border-radius:4px;border:none;margin:0 2px;}
+  .ask-locked{padding:16px;font-size:12.5px;color:var(--ink-2);line-height:1.6;background:var(--surface-2);}
+  .ask-form{display:flex;gap:9px;padding:12px 15px;border-top:1px solid var(--line);}
+  .ask-in{flex:1;border:1px solid var(--line);border-radius:9px;background:var(--surface-2);color:var(--ink);
+    font-family:inherit;font-size:13px;padding:9px 12px;}
+  .cx-back{background:none;border:none;font-size:12.5px;color:var(--ink-3);display:inline-flex;align-items:center;gap:5px;margin-bottom:14px;}
+  .cx-back:hover{color:var(--ink);}
+
   /* ── MANDATE CARD ──────────────────────────────────────── */
   .mandate{border:1px solid var(--line);border-radius:14px;background:var(--surface);
     box-shadow:0 1px 0 rgba(0,0,0,.02);overflow:hidden;margin-bottom:22px;}
@@ -438,6 +557,9 @@ const M = {
   tab:"buyer", busy:false, status:"live", terminal:false, error:null, convergence:[],
   // contract intelligence — `filename` is the uploaded file's name (display only)
   intel:{ open:false, busy:false, text:"", filename:"", result:null, accepted:{}, error:null, applied:false },
+  // due-diligence cockpit — the risk dossier, filters, and the in-tool Ask-Opus thread
+  cockpit:{ busy:false, error:null, data:null, catFilter:"all", sevFilter:"all",
+    selected:null, chat:[], asking:false, tab:"risk" },
   // setup fields the human has hand-edited — auto-fill from a contract must never clobber these
   touched:new Set(),
 };
@@ -569,8 +691,11 @@ function supplierMove(persona, round){
 
 /* ══ RENDER ══════════════════════════════════════════════════════════════ */
 const app = $("#app");
-function render(){ app.innerHTML = M.phase==="setup" ? setupView() : runView();
-  if(M.phase==="setup") bindSetup(); else bindRun();
+function render(){
+  app.innerHTML = M.phase==="cockpit" ? cockpitView() : M.phase==="setup" ? setupView() : runView();
+  if(M.phase==="cockpit") bindCockpit();
+  else if(M.phase==="setup") bindSetup();
+  else bindRun();
   for(const id of ["threadBuyer","threadSupplier"]){ const el=$("#"+id); if(el) el.scrollTop=el.scrollHeight; }
 }
 
@@ -651,6 +776,7 @@ Category: Corrugated packaging
     <div class="intel-row">
       <button class="btn primary" id="intelReadBtn" ${it.busy?"disabled":""}>${it.busy?'<span class="spin"></span> Reading…':'📄 Read the contract'}</button>
       <button class="btn ghost" id="intelSampleBtn">load a sample</button>
+      <button class="btn ghost" id="cockpitBtn"><svg width="14" height="14"><use href="#i-shield"/></svg> Due-diligence example</button>
       <label class="intel-research"><input type="checkbox" id="intelResearch" checked> research supplier (Hades)</label>
       ${it.error?`<span class="intel-err">⚠ ${esc(it.error)}</span>`:""}
     </div>
@@ -822,6 +948,7 @@ function bindSetup(){
 function bindIntel(){
   const ta=$("#intelText"); if(ta) ta.oninput=()=>{ M.intel.text=ta.value; M.intel.filename=""; };
   const sb=$("#intelSampleBtn"); if(sb) sb.onclick=()=>{ M.intel.text=$("#intelSample").value; M.intel.filename=""; render(); };
+  const cb=$("#cockpitBtn"); if(cb) cb.onclick=openCockpit;
   const rb=$("#intelReadBtn"); if(rb) rb.onclick=readContract;
   // upload: file picker + drag-drop, both feed the same readFileIntoIntel path
   const fi=$("#intelFile"); if(fi) fi.onchange=e=>{ const f=e.target.files&&e.target.files[0]; if(f) readFileIntoIntel(f); };
@@ -951,6 +1078,225 @@ function writeShapedIntoForm(env, r){
   setW("rebate_pct","wRebate"); setW("volume_units","wVolume");
   // the data-driven target/floor from the shaped mandate (replaces the hardcoded 0.9/0.6)
   M.shapedTarget=env.target_utility; M.shapedReservation=env.reservation_utility;
+}
+
+/* ══ DUE-DILIGENCE COCKPIT ═══════════════════════════════════════════════ */
+const SEV_RANK={critical:3,high:2,medium:1,low:0};
+const CAT_LABEL={legal:"Legal",gdpr:"GDPR",infosec:"InfoSec",coc:"CoC",commercial:"Commercial"};
+
+async function openCockpit(){
+  M.phase="cockpit"; M.cockpit.busy=true; M.cockpit.error=null; render();
+  try{
+    const r=await fetch(API+"/dossier",{headers:authHeaders()});
+    const data=await r.json().catch(()=>({error:{code:"bad",message:"unreadable response"}}));
+    if(!r.ok) throw new Error(data?.error?.message||"couldn't load the dossier");
+    M.cockpit.data=data;
+    // preselect the highest-severity finding so the evidence pane isn't empty
+    const anchored=data.findings.filter(f=>f.verified);
+    anchored.sort((a,b)=>SEV_RANK[b.severity]-SEV_RANK[a.severity]);
+    M.cockpit.selected=anchored.length?anchored[0].anchor_id:null;
+  }catch(e){ M.cockpit.error=e.message||"couldn't load the dossier"; }
+  finally{ M.cockpit.busy=false; render(); }
+}
+
+function cockpitView(){
+  const c=M.cockpit;
+  if(c.busy) return `<div class="wrap"><div class="evid-empty"><span class="spin dark"></span> Scanning the contract for risks…</div></div>`;
+  if(c.error) return `<div class="wrap"><button class="cx-back" id="cxBack"><svg width="13" height="13"><use href="#i-chev"/></svg> back</button><div class="intel-block">⚠ ${esc(c.error)}</div></div>`;
+  const d=c.data; if(!d) return `<div class="wrap"></div>`;
+  return `<div class="wrap">
+    <button class="cx-back" id="cxBack"><svg width="13" height="13"><use href="#i-chev"/></svg> back to the negotiation setup</button>
+    <div class="cx-hd">
+      <h2>${esc(d.doc_title)}</h2>
+      ${d.is_example?`<span class="cx-example">example · not a live scan</span>`:""}
+      <span class="cx-meta">${d.page_count} pages · ${d.findings.length} findings</span>
+    </div>
+    <p class="cx-sub">Every risk below was located by deterministic code and its quote verified against the contract — an <b>anchored ✓</b> badge means the citation is real, not an LLM guess. Severity is escalated by fixed rules a named human owns; the gate decides when legal must review.</p>
+    ${gateBanner(d.gate)}
+    <div class="cx-tabs">
+      <button class="cx-tab${c.tab==="risk"?" on":""}" data-cxtab="risk">Risk review</button>
+      <button class="cx-tab${c.tab==="commercial"?" on":""}" data-cxtab="commercial">Commercial breakdown</button>
+    </div>
+    ${c.tab==="risk"?riskTab(d):commercialTab(d)}
+    ${askOpusBox()}
+  </div>`;
+}
+
+function gateBanner(g){
+  const on=g.review_required;
+  const counts=`<span class="cx-pill critical">${g.critical_count} critical</span>
+    <span class="cx-pill high">${g.high_count} high</span>`;
+  return `<div class="gate${on?"":" ok"}">
+    <svg width="18" height="18"><use href="#i-${on?"shield":"check"}"/></svg>
+    <div class="gate-body">
+      <div class="gate-title">${on?"Legal review required":"No legal review required"}</div>
+      <div class="gate-rule">Rule fired: ${esc(g.rule)}</div>
+      <div class="gate-owner">owner · ${esc(g.owner)}${g.ignored_unverified?` · ${g.ignored_unverified} unverified finding${g.ignored_unverified!==1?"s":""} excluded from the gate`:""}</div>
+    </div>
+    <div class="gate-counts">${counts}</div>
+  </div>`;
+}
+
+function riskTab(d){
+  const c=M.cockpit;
+  const cats=["all",...Object.keys(CAT_LABEL).filter(k=>d.findings.some(f=>f.category===k))];
+  const sevs=["all","critical","high","medium"];
+  const catChips=cats.map(k=>`<button class="cx-chip${c.catFilter===k?" on":""}" data-cat="${k}">${k==="all"?"All":CAT_LABEL[k]||k}</button>`).join("");
+  const sevChips=sevs.map(s=>`<button class="cx-chip${c.sevFilter===s?" on":""}" data-sev="${s}">${s==="all"?"All severities":s}</button>`).join("");
+  let list=d.findings.filter(f=>(c.catFilter==="all"||f.category===c.catFilter)&&(c.sevFilter==="all"||f.severity===c.sevFilter));
+  list.sort((a,b)=>SEV_RANK[b.severity]-SEV_RANK[a.severity]);
+  const cards=list.map(riskCard).join("")||`<div class="intel-none">No findings match this filter.</div>`;
+  return `<div class="cx-split">
+    <div>
+      <div class="cx-filters">${catChips}</div>
+      <div class="cx-filters">${sevChips}</div>
+      <div class="cx-cards">${cards}</div>
+    </div>
+    ${evidencePane(d)}
+  </div>`;
+}
+
+function riskCard(f){
+  const sel=M.cockpit.selected===f.anchor_id&&f.verified;
+  const anchor=f.verified
+    ? `<button class="ranchor" data-jump="${esc(f.anchor_id)}"><svg width="11" height="11"><use href="#i-book"/></svg> p.${f.page_display} · ${esc(f.anchor_id)}</button>`
+    : `<span class="rverify no"><svg width="11" height="11"><use href="#i-warn"/></svg> unverified — quarantined</span>`;
+  const verify=f.verified?`<span class="rverify ok"><svg width="11" height="11"><use href="#i-check"/></svg> anchored</span>`:"";
+  const raise=f.raised_by&&f.raised_by.length
+    ? `<div class="rraise">model said <b>${esc(f.llm_severity)}</b> → raised to <b>${esc(f.severity)}</b> by ${f.raised_by.map(esc).join(", ")}</div>`:"";
+  const pos=(f.suggested_position||f.fallback_position)?`<div class="rpos">
+    ${f.suggested_position?`<div class="rpos-line"><span class="rpos-k">Ask:</span><span class="rpos-v">${esc(f.suggested_position)}</span></div>`:""}
+    ${f.fallback_position?`<div class="rpos-line"><span class="rpos-k">Fallback:</span><span class="rpos-v">${esc(f.fallback_position)}</span></div>`:""}
+  </div>`:"";
+  return `<div class="rcard sev-${f.severity}${sel?" sel":""}${f.verified?"":" unver"}" data-card="${esc(f.anchor_id||f.title)}"${f.verified?` data-jump="${esc(f.anchor_id)}"`:""}>
+    <div class="rcard-top">
+      <span class="rsev">${esc(f.severity)}</span>
+      <span class="rcat">${CAT_LABEL[f.category]||f.category}</span>
+      <span class="rcard-sp"></span>
+      ${verify}
+    </div>
+    <div class="rcard-title">${esc(f.title)}</div>
+    <div class="rcard-hurts">${esc(f.why_it_hurts)}</div>
+    ${raise}
+    <div class="rcard-top" style="margin-top:9px;margin-bottom:0;">${anchor}</div>
+    ${pos}
+  </div>`;
+}
+
+function evidencePane(d){
+  const c=M.cockpit;
+  const byPage={};
+  d.blocks.forEach(b=>{ (byPage[b.page_display]=byPage[b.page_display]||[]).push(b); });
+  // which anchors are risk-bearing, and at what severity, so the viewer can tint them
+  const riskBy={};
+  d.findings.forEach(f=>{ if(f.verified&&f.anchor_id) riskBy[f.anchor_id]=f.severity; });
+  const pages=Object.keys(byPage).map(Number).sort((a,b)=>a-b).map(p=>`
+    <div class="evid-page">
+      <div class="evid-pagenum">Page ${p} of ${d.page_count}</div>
+      ${byPage[p].map(b=>{
+        const sev=riskBy[b.anchor_id];
+        const cls=sev?`evid-block risk sev-${sev}`:"evid-block";
+        return `<div class="${cls}" id="ev-${esc(b.anchor_id)}">${esc(b.text)}</div>`;
+      }).join("")}
+    </div>`).join("");
+  return `<div class="evid">
+    <div class="evid-hd"><svg width="14" height="14" style="color:var(--buyer)"><use href="#i-book"/></svg>
+      <span class="evid-doc">${esc(d.doc_title)}</span>
+      <span class="evid-nav">click a risk to jump</span></div>
+    <div class="evid-scroll" id="evidScroll">${pages||`<div class="evid-empty">no document text</div>`}</div>
+  </div>`;
+}
+
+function commercialTab(d){
+  const e=d.economics, cur=e.currency;
+  const money=v=>`${cur} ${(+v).toLocaleString('en')}`;
+  const build=e.build_up.map(p=>`<div class="econ-row"><span class="lbl">${esc(p.label)}<br><span class="note">${esc(p.note)}</span></span><span class="amt">${money(p.amount_eur)}</span></div>`).join("");
+  const risks=e.risks.map(r=>`<div class="erisk sev-${r.severity}">
+    <div class="erisk-body">
+      <div class="erisk-top"><span class="rsev">${esc(r.severity)}</span><span class="erisk-lbl">${esc(r.label)}</span></div>
+      <div class="erisk-detail">${esc(r.detail)}</div>
+      ${r.lever?`<div class="erisk-lever"><b>Lever:</b> ${esc(r.lever)}</div>`:""}
+    </div></div>`).join("");
+  return `<div>
+    <div class="econ-hero">
+      <div class="econ-stat"><span class="k">Year 1 total</span><span class="v">${money(e.year1_total_eur)}</span></div>
+      <div class="econ-stat"><span class="k">TCO over ${e.term_months} months</span><span class="v">${money(e.tco_over_term_eur)}</span></div>
+    </div>
+    <div class="econ-sec">how the price is built up</div>
+    <div class="econ-buildup">${build}
+      <div class="econ-row total"><span class="lbl">Year 1 total</span><span class="amt">${money(e.year1_total_eur)}</span></div>
+    </div>
+    <div class="econ-sec">economic risks · each is a negotiation lever</div>
+    ${risks}
+  </div>`;
+}
+
+function askOpusBox(){
+  const c=M.cockpit;
+  const full=!!fullToken();
+  const model=full?"Opus 4.8":"full version only";
+  let body;
+  if(!full){
+    body=`<div class="ask-locked">In the <b>full version</b>, this box asks <b>Opus 4.8</b> about the legal and economic risks in this contract — grounded in the anchored passages above, and every answer cites the clause it came from. The public demo keeps this off so it costs nothing to run.</div>`;
+  } else {
+    const thread=c.chat.length?c.chat.map(m=>m.role==="q"
+      ? `<div class="ask-q">${esc(m.text)}</div>`
+      : `<div class="ask-a">${m.html}</div>`).join("")
+      : `<div class="ask-empty">Ask about any legal or economic risk — e.g. “How bad is the liability cap?” or “What does the CPU+3% indexation cost us over the term?” Answers are grounded in the clauses above.</div>`;
+    body=`<div class="ask-thread" id="askThread">${thread}</div>
+      <form class="ask-form" id="askForm">
+        <input class="ask-in" id="askIn" placeholder="Ask about a legal or economic risk…" ${c.asking?"disabled":""}>
+        <button class="btn primary" type="submit" ${c.asking?"disabled":""}>${c.asking?'<span class="spin"></span>':"Ask"}</button>
+      </form>`;
+  }
+  return `<div class="ask">
+    <div class="ask-hd"><svg width="15" height="15" style="color:var(--buyer)"><use href="#i-seal"/></svg>
+      <b>Ask about this contract</b><span class="ask-model">${model}</span></div>
+    ${body}
+  </div>`;
+}
+
+function jumpToAnchor(anchorId){
+  if(!anchorId) return;
+  M.cockpit.selected=anchorId;
+  const el=$("#ev-"+CSS.escape(anchorId));
+  if(el){
+    el.scrollIntoView({behavior:"smooth",block:"center"});
+    el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash");
+    setTimeout(()=>el.classList.remove("flash"),1400);
+  }
+  // update card selection styling without a full re-render (keeps scroll position)
+  document.querySelectorAll(".rcard").forEach(card=>card.classList.toggle("sel", card.getAttribute("data-jump")===anchorId));
+}
+
+function bindCockpit(){
+  const back=$("#cxBack"); if(back) back.onclick=()=>{ M.phase="setup"; render(); };
+  document.querySelectorAll("[data-cxtab]").forEach(b=>b.onclick=()=>{ M.cockpit.tab=b.getAttribute("data-cxtab"); render(); });
+  document.querySelectorAll("[data-cat]").forEach(b=>b.onclick=()=>{ M.cockpit.catFilter=b.getAttribute("data-cat"); render(); });
+  document.querySelectorAll("[data-sev]").forEach(b=>b.onclick=()=>{ M.cockpit.sevFilter=b.getAttribute("data-sev"); render(); });
+  // clicking a card (or its anchor chip) jumps the evidence pane
+  document.querySelectorAll("[data-jump]").forEach(el=>el.addEventListener("click",e=>{ e.stopPropagation(); jumpToAnchor(el.getAttribute("data-jump")); }));
+  const form=$("#askForm"); if(form) form.onsubmit=e=>{ e.preventDefault(); askOpus(); };
+}
+
+async function askOpus(){
+  const inp=$("#askIn"); if(!inp) return;
+  const q=inp.value.trim(); if(!q||M.cockpit.asking) return;
+  M.cockpit.chat.push({role:"q",text:q});
+  M.cockpit.asking=true; render();
+  try{
+    const r=await fetch(API+"/dossier/ask",{method:"POST",headers:{...authHeaders(),"Content-Type":"application/json"},body:JSON.stringify({question:q})});
+    const data=await r.json().catch(()=>({error:{code:"bad",message:"unreadable response"}}));
+    if(!r.ok) throw new Error(data?.error?.message||"couldn't get an answer");
+    M.cockpit.chat.push({role:"a",html:renderAnswer(data)});
+  }catch(e){ M.cockpit.chat.push({role:"a",html:`<span style="color:var(--crit)">⚠ ${esc(e.message||"couldn't get an answer")}</span>`}); }
+  finally{ M.cockpit.asking=false; render(); }
+}
+
+// render an answer, turning [p2-b1] anchor refs into clickable chips that jump the viewer
+function renderAnswer(data){
+  const text=esc(data.answer||"");
+  return text.replace(/\[([a-z]?\d+-b\d+)\]/g,(m,a)=>`<button class="ask-cite" data-jump="${a}">${a}</button>`);
 }
 
 /* ── run view ── */

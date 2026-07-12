@@ -254,6 +254,66 @@ def prepare(req: PrepareRequest, request: Request) -> PreparedNegotiation | JSON
     return prepare_negotiation(req.contract_text, researcher=researcher, research=do_research)
 
 
+@app.get("/dossier", response_model=None)
+def dossier_example(request: Request) -> JSONResponse:
+    """The due-diligence cockpit's worked example — findings clustered by risk, each with a
+    verified page/¶ anchor, severities escalated, and the legal-review gate computed.
+
+    This is the CANNED dossier: a bundled sample contract run through the REAL anchor + gate
+    code (so the anchored badges, deep-links, and gate verdict are genuine, not hardcoded), with
+    hand-authored findings standing in for the live LLM scan. No LLM, no network — always safe to
+    serve in demo mode. The live pipeline will build the same shape from an uploaded PDF.
+    """
+    gate = _rate_gate(request, "dossier", limit=_RATE_PER_MIN)
+    if gate is not None:
+        return gate
+
+    from negotiation_agent.dossier import build_dossier
+
+    return JSONResponse(content=build_dossier().model_dump(mode="json"))
+
+
+class AskRequest(BaseModel):
+    question: str = Field(max_length=1000)
+
+
+@app.post("/dossier/ask", response_model=None)
+def dossier_ask(req: AskRequest, request: Request) -> JSONResponse:
+    """Ask Opus 4.8 about the dossier's legal + economic risks, grounded in the anchored clauses.
+
+    A PAID path — gated behind full mode (the demo shows a locked box, never calls this). The
+    grounding clauses are rebuilt server-side from the canned dossier, NOT taken from the client,
+    so the model can only be grounded in real, anchored text. Returns the answer + the anchor ids
+    it cited (validated to exist), which the UI turns into deep-links.
+    """
+    gate = _rate_gate(request, "ask", limit=_RESEARCH_RATE_PER_MIN)
+    if gate is not None:
+        return gate
+    if not _full_mode(request):
+        return JSONResponse(
+            status_code=403,
+            content={"error": {"code": "full_mode_only", "message": "Ask-Opus is available in the "
+                     "full version only."}},
+        )
+
+    from negotiation_agent.ask import ask_opus
+    from negotiation_agent.dossier import build_dossier
+
+    dossier = build_dossier()
+    blocks = [b.model_dump(mode="json") for b in dossier.blocks]
+    economics = dossier.economics.model_dump(mode="json")
+    try:
+        result = ask_opus(req.question, blocks, economics)
+    except (ImportError, RuntimeError) as e:
+        logger.warning("ask-opus unavailable: %s", e)
+        return JSONResponse(
+            status_code=503,
+            content={"error": {"code": "ask_unavailable",
+                     "message": "Ask-Opus is not configured."}},
+        )
+    return JSONResponse(content=result.model_dump(mode="json"))
+
+
 # A PDF/DOCX upload is bulky (images) even though its text is small; cap the file at
 # 20 MB, read in bounded chunks so a lying Content-Length can't exhaust memory.
 _MAX_UPLOAD_BYTES = 20 * 1024 * 1024
