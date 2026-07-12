@@ -122,8 +122,22 @@
     padding:16px 18px;box-shadow:0 1px 0 rgba(0,0,0,.02);}
   .intel-hd{display:flex;gap:11px;align-items:flex-start;margin-bottom:12px;}
   .intel-hd b{font-size:15px;display:block;} .intel-hd span{font-size:12.5px;color:var(--ink-3);line-height:1.5;display:block;margin-top:2px;}
-  .intel-ta{width:100%;min-height:90px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);
+  .intel-ta{width:100%;min-height:220px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);
     color:var(--ink);font-family:var(--mono);font-size:12.5px;padding:10px 12px;resize:vertical;line-height:1.5;}
+
+  /* commercial essence — the deal at a glance, above the raw text */
+  .essence{margin:2px 0 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);overflow:hidden;}
+  .essence-hd{display:flex;align-items:center;gap:8px;padding:9px 14px;border-bottom:1px solid var(--line);
+    background:color-mix(in srgb,var(--buyer) 6%,var(--surface));}
+  .essence-hd svg{color:var(--buyer);flex:none;}
+  .essence-hd b{font-size:13.5px;} .essence-hd .es-sup{color:var(--buyer);font-weight:600;}
+  .essence-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:1px;background:var(--line);}
+  .es{display:flex;flex-direction:column;gap:3px;padding:11px 14px;background:var(--surface-2);}
+  .esk{font-family:var(--mono);font-size:9.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3);}
+  .esv{font-size:15px;font-weight:600;color:var(--ink);line-height:1.2;} .esv .unk{font-weight:400;color:var(--ink-3);font-size:13px;}
+  .es-flag{padding:8px 14px;font-size:12px;color:var(--ink-2);border-top:1px solid var(--line);display:flex;gap:8px;flex-wrap:wrap;}
+  .es-chip{font-size:11.5px;padding:1px 8px;border-radius:999px;background:var(--surface);border:1px solid var(--line);}
+  .ta-lbl{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin:0 0 6px;}
   .intel-drop{margin-bottom:10px;border:1.5px dashed var(--line);border-radius:10px;background:var(--surface-2);
     padding:14px 16px;display:flex;align-items:center;gap:11px;cursor:pointer;transition:border-color .15s,background .15s;}
   .intel-drop:hover,.intel-drop.over{border-color:var(--buyer);background:var(--surface);}
@@ -631,6 +645,8 @@ Category: Corrugated packaging
         : `<span class="dz-main">Drop a contract file here, or click to choose</span><span class="dz-sub">PDF · Word .docx · .txt · .md · .csv — scanned/image PDFs have no text to read</span>`}</div>
       <input type="file" id="intelFile" accept=".pdf,.docx,.txt,.md,.markdown,.csv,.text,application/pdf,text/plain" hidden>
     </label>
+    ${it.result?intelEssence(it.result):""}
+    ${it.result?`<div class="ta-lbl">contract text — the agent read all of this</div>`:""}
     <textarea class="intel-ta" id="intelText" placeholder="…or paste contract text here">${esc(it.text)}</textarea>
     <div class="intel-row">
       <button class="btn primary" id="intelReadBtn" ${it.busy?"disabled":""}>${it.busy?'<span class="spin"></span> Reading…':'📄 Read the contract'}</button>
@@ -640,6 +656,35 @@ Category: Corrugated packaging
     </div>
     ${it.result?intelResult(it.result):""}
     <input type="hidden" id="intelSample" value="${esc(sample).replace(/"/g,'&quot;')}">
+  </div>`;
+}
+
+// The commercial essence of the contract, at a glance — supplier + the numbers that drive the
+// mandate, shown ABOVE the raw text so a buyer reads the deal instantly, not by scrolling clauses.
+function intelEssence(r){
+  const i=r.intelligence, ext=i.extraction, life=i.lifecycle||{}, legal=i.legal||{};
+  const terms=Object.fromEntries((ext.terms||[]).map(t=>[t.name,t.value]));
+  const num=(v,fmt)=> v!=null ? `<span class="esv">${fmt?fmt(v):esc(String(v))}</span>` : `<span class="esv"><span class="unk">not detected</span></span>`;
+  const cells = [
+    ["Unit price", terms.price!=null?`€${(+terms.price).toFixed(2)}`:null],
+    ["Payment", terms.payment_days!=null?`net-${terms.payment_days}`:null],
+    ["Volume", terms.volume_units!=null?`${(+terms.volume_units).toLocaleString('en')} u`:null],
+    ["Rebate", terms.rebate_pct!=null?`${(+terms.rebate_pct).toFixed(1)}%`:null],
+    ["Expiry", life.expiration_date&&life.expiration_date.value!=null?esc(String(life.expiration_date.value)):null],
+  ];
+  const chips=[];
+  if(legal.has_nda&&legal.has_nda.value==="true") chips.push("NDA in place");
+  if(legal.has_dpa&&legal.has_dpa.value==="true") chips.push("DPA in place");
+  if(life.auto_renews&&life.auto_renews.value==="true") chips.push("⚠ auto-renews");
+  if(ext.category) chips.push(esc(ext.category));
+  const supplier = ext.supplier_name ? `<span class="es-sup">${esc(ext.supplier_name)}</span>` : `<span class="unk">supplier not detected</span>`;
+  return `<div class="essence">
+    <div class="essence-hd"><svg width="15" height="15"><use href="#i-seal"/></svg>
+      <b>Negotiating with ${supplier}</b></div>
+    <div class="essence-grid">
+      ${cells.map(([k,v])=>`<div class="es"><span class="esk">${k}</span>${num(v)}</div>`).join("")}
+    </div>
+    ${chips.length?`<div class="es-flag">${chips.map(c=>`<span class="es-chip">${c}</span>`).join("")}</div>`:""}
   </div>`;
 }
 
@@ -839,8 +884,28 @@ async function readContract(){
     const research=$("#intelResearch") ? $("#intelResearch").checked : true;
     const res=await post("/intel", {contract_text:text, research});
     M.intel.result=res;
+    // negotiate WITH this provider: fill supplier + extracted numbers into the form as soon
+    // as the contract is read, so the sample defaults never linger. M.touched guards hand-edits.
+    fillFormFromExtraction(res);
   }catch(e){ M.intel.error=e.message||"couldn't read the contract"; }
   finally{ M.intel.busy=false; render(); }
+}
+
+// Fill the supplier + negotiable numbers from a just-read contract, never clobbering a value
+// the human hand-typed (M.touched guards that). Runs on "Read the contract"; the later
+// "Apply to mandate" step layers the shaped weights/target/floor on top via writeShapedIntoForm.
+function fillFormFromExtraction(r){
+  const i=r&&r.intelligence; const ext=i&&i.extraction; if(!ext) return;
+  const terms=Object.fromEntries((ext.terms||[]).map(t=>[t.name,t.value]));
+  if(ext.supplier_name && !M.touched.has("supplier")) M.form.supplier=ext.supplier_name;
+  if(ext.category && !M.touched.has("category")) M.form.category=ext.category;
+  if(terms.price!=null){
+    if(!M.touched.has("supplierOpen")) M.form.supplierOpen=+terms.price;
+    if(!M.touched.has("target")) M.form.target=+terms.price;
+    if(!M.touched.has("floor")) M.form.floor=Math.round((+terms.price*1.17)*100)/100;
+  }
+  if(terms.payment_days!=null && !M.touched.has("paymentLever"))
+    M.form.paymentLever=Math.max(+M.form.paymentLever, +terms.payment_days);
 }
 
 async function applyIntel(){

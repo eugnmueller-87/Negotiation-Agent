@@ -63,3 +63,4 @@ data/processed/
 .claude/hooks/
 .claude/rules/
 .claude/skills/
+.claude/scheduled_tasks.lock
