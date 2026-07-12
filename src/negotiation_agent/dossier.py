@@ -302,18 +302,79 @@ class ViewerBlock(BaseModel):
 
 class Dossier(BaseModel):
     """The full cockpit payload: findings (with real verdicts), the gate, the document for the
-    viewer, and the economic breakdown. ``is_example`` is always True here — this is the canned
-    dossier; the live pipeline will build the same shape with is_example=False."""
+    viewer, and the economic breakdown. The canned example sets ``is_example=True``; the live
+    scan (:mod:`negotiation_agent.scan`) builds the same shape with ``is_example=False``.
+
+    ``is_complete`` is False when a live scan had a specialist window fail — the dossier is built
+    from the windows that ran, never a silent short read. ``no_anchorable_findings`` is True when
+    the gate counted zero findings, so a UI can distinguish "extraction grounded nothing" from
+    "clean contract" (both show review_required=False otherwise)."""
 
     model_config = {"frozen": True}
 
     is_example: bool = True
+    is_complete: bool = True
+    no_anchorable_findings: bool = False
     doc_title: str
     page_count: int
     findings: list[DossierFinding]
     gate: gate.GateVerdict
     blocks: list[ViewerBlock]
     economics: EconomicBreakdown
+
+
+def assemble_dossier(
+    document: anchor.Document,
+    findings_pre: list[tuple[gate.RiskFinding, gate.Severity]],
+    economics: EconomicBreakdown,
+    *,
+    doc_title: str,
+    is_example: bool,
+    is_complete: bool = True,
+    policy: gate.GatePolicy | None = None,
+) -> Dossier:
+    """The shared tail for BOTH the canned and live paths — the trust layer, byte-identical.
+
+    ``findings_pre`` pairs each pre-escalation :class:`gate.RiskFinding` with the LLM's originally
+    proposed severity (so the UI can show "model said X → raised to Y"). This runs
+    ``escalate_all`` → ``legal_gate`` → zips the proposal against the escalated finding → maps each
+    to its page → builds the viewer blocks. Keeping this one function is what guarantees the live
+    scan gets exactly the same verification and gate the canned example was proven with."""
+    escalated = gate.escalate_all([f for f, _ in findings_pre])
+    gate_verdict = gate.legal_gate(escalated, policy or gate.GatePolicy(owner="E. Procurement"))
+    page_by_anchor = {b.anchor_id: b.page_display for b in document.blocks}
+    dossier_findings = [
+        DossierFinding(
+            category=e.category,
+            severity=e.severity,
+            llm_severity=llm_sev,
+            title=e.title,
+            quote=e.quote,
+            anchor_id=e.anchor_id,
+            page_display=page_by_anchor.get(e.anchor_id) if e.anchor_id else None,
+            verified=e.verified,
+            raised_by=e.raised_by,
+            why_it_hurts=e.why_it_hurts,
+            suggested_position=e.suggested_position,
+            fallback_position=e.fallback_position,
+        )
+        for (_, llm_sev), e in zip(findings_pre, escalated, strict=True)
+    ]
+    blocks = [
+        ViewerBlock(anchor_id=b.anchor_id, page_display=b.page_display, text=b.text)
+        for b in document.blocks
+    ]
+    return Dossier(
+        is_example=is_example,
+        is_complete=is_complete,
+        no_anchorable_findings=gate_verdict.counted == 0,
+        doc_title=doc_title,
+        page_count=document.page_count,
+        findings=dossier_findings,
+        gate=gate_verdict,
+        blocks=blocks,
+        economics=economics,
+    )
 
 
 def _render_sample_pdf() -> bytes:
@@ -373,37 +434,14 @@ def build_dossier(policy: gate.GatePolicy | None = None) -> Dossier:
             )
         )
 
-    escalated = gate.escalate_all(risk_findings)
-    gate_verdict = gate.legal_gate(escalated, policy or gate.GatePolicy(owner="E. Procurement"))
-
-    page_by_anchor = {b.anchor_id: b.page_display for b in document.blocks}
-    findings = [
-        DossierFinding(
-            category=e.category,
-            severity=e.severity,
-            llm_severity=canned.llm_severity,
-            title=e.title,
-            quote=e.quote,
-            anchor_id=e.anchor_id,
-            page_display=page_by_anchor.get(e.anchor_id) if e.anchor_id else None,
-            verified=e.verified,
-            raised_by=e.raised_by,
-            why_it_hurts=e.why_it_hurts,
-            suggested_position=e.suggested_position,
-            fallback_position=e.fallback_position,
-        )
-        for (canned, _), e in zip(resolved, escalated, strict=True)
+    findings_pre = [
+        (rf, canned.llm_severity) for rf, (canned, _) in zip(risk_findings, resolved, strict=True)
     ]
-
-    blocks = [
-        ViewerBlock(anchor_id=b.anchor_id, page_display=b.page_display, text=b.text)
-        for b in document.blocks
-    ]
-    return Dossier(
+    return assemble_dossier(
+        document,
+        findings_pre,
+        _economic_breakdown(),
         doc_title="MSA_CloudVendor_2026.pdf",
-        page_count=document.page_count,
-        findings=findings,
-        gate=gate_verdict,
-        blocks=blocks,
-        economics=_economic_breakdown(),
+        is_example=True,
+        policy=policy,
     )

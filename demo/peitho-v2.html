@@ -558,7 +558,7 @@ const M = {
   // contract intelligence — `filename` is the uploaded file's name (display only)
   intel:{ open:false, busy:false, text:"", filename:"", result:null, accepted:{}, error:null, applied:false },
   // due-diligence cockpit — the risk dossier, filters, and the in-tool Ask-Opus thread
-  cockpit:{ busy:false, error:null, data:null, catFilter:"all", sevFilter:"all",
+  cockpit:{ busy:false, error:null, scanError:null, data:null, catFilter:"all", sevFilter:"all",
     selected:null, chat:[], asking:false, tab:"risk" },
   // setup fields the human has hand-edited — auto-fill from a contract must never clobber these
   touched:new Set(),
@@ -1099,6 +1099,35 @@ async function openCockpit(){
   finally{ M.cockpit.busy=false; render(); }
 }
 
+// Live scan of an uploaded contract — full mode only (the demo shows an honest note). POSTs the
+// PDF to /dossier/scan; the backend runs LLM extraction through the SAME anchor+gate pipeline and
+// returns the same dossier shape, which drops straight into the cockpit view.
+function scanOwnContract(){
+  if(!fullToken()){
+    M.cockpit.scanError="Live scanning of your own contract runs Claude and is available in the full version only. This example is the real engine on a bundled contract — $0.";
+    render(); return;
+  }
+  const inp=$("#cxScanFile"); if(inp) inp.click();
+}
+
+async function runLiveScan(file){
+  if(!file) return;
+  if(!/\.pdf$/i.test(file.name)){ M.cockpit.scanError="Upload a text-based PDF to scan."; render(); return; }
+  M.cockpit.busy=true; M.cockpit.scanError=null; M.cockpit.error=null; render();
+  try{
+    const fd=new FormData(); fd.append("file", file, file.name);
+    const r=await fetch(API+"/dossier/scan",{method:"POST",headers:authHeaders(),body:fd});
+    const data=await r.json().catch(()=>({error:{code:"bad",message:"unreadable response"}}));
+    if(!r.ok) throw new Error(data?.error?.message||"the scan failed");
+    M.cockpit.data=data.dossier;
+    M.cockpit.chat=[];  // fresh chat context for the new contract
+    const anchored=data.dossier.findings.filter(f=>f.verified);
+    anchored.sort((a,b)=>SEV_RANK[b.severity]-SEV_RANK[a.severity]);
+    M.cockpit.selected=anchored.length?anchored[0].anchor_id:null;
+  }catch(e){ M.cockpit.scanError=e.message||"the scan failed"; }
+  finally{ M.cockpit.busy=false; render(); }
+}
+
 function cockpitView(){
   const c=M.cockpit;
   if(c.busy) return `<div class="wrap"><div class="evid-empty"><span class="spin dark"></span> Scanning the contract for risks…</div></div>`;
@@ -1108,10 +1137,14 @@ function cockpitView(){
     <button class="cx-back" id="cxBack"><svg width="13" height="13"><use href="#i-chev"/></svg> back to the negotiation setup</button>
     <div class="cx-hd">
       <h2>${esc(d.doc_title)}</h2>
-      ${d.is_example?`<span class="cx-example">example · not a live scan</span>`:""}
-      <span class="cx-meta">${d.page_count} pages · ${d.findings.length} findings</span>
+      ${d.is_example?`<span class="cx-example">example · not a live scan</span>`:`<span class="cx-example" style="background:color-mix(in srgb,var(--good) 14%,transparent);color:var(--good)">live scan</span>`}
+      <span class="cx-meta">${d.page_count} pages · ${d.findings.length} findings${d.is_complete===false?" · partial (a pass failed)":""}</span>
+      <span class="rcard-sp" style="flex:1"></span>
+      <button class="btn ghost" id="cxScanBtn"><svg width="14" height="14"><use href="#i-seal"/></svg> Scan your own contract</button>
+      <input type="file" id="cxScanFile" accept=".pdf,application/pdf" hidden>
     </div>
     <p class="cx-sub">Every risk below was located by deterministic code and its quote verified against the contract — an <b>anchored ✓</b> badge means the citation is real, not an LLM guess. Severity is escalated by fixed rules a named human owns; the gate decides when legal must review.</p>
+    ${c.scanError?`<div class="intel-block" style="margin-bottom:14px">⚠ ${esc(c.scanError)}</div>`:""}
     ${gateBanner(d.gate)}
     <div class="cx-tabs">
       <button class="cx-tab${c.tab==="risk"?" on":""}" data-cxtab="risk">Risk review</button>
@@ -1277,6 +1310,8 @@ function bindCockpit(){
   // clicking a card (or its anchor chip) jumps the evidence pane
   document.querySelectorAll("[data-jump]").forEach(el=>el.addEventListener("click",e=>{ e.stopPropagation(); jumpToAnchor(el.getAttribute("data-jump")); }));
   const form=$("#askForm"); if(form) form.onsubmit=e=>{ e.preventDefault(); askOpus(); };
+  const scanBtn=$("#cxScanBtn"); if(scanBtn) scanBtn.onclick=scanOwnContract;
+  const scanFile=$("#cxScanFile"); if(scanFile) scanFile.onchange=e=>{ const f=e.target.files&&e.target.files[0]; if(f) runLiveScan(f); };
 }
 
 async function askOpus(){

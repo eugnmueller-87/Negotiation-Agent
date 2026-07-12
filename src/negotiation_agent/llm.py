@@ -85,8 +85,13 @@ class DraftClient(Protocol):
 # Fence tags that delimit untrusted-data blocks in the prompt. A field containing one of
 # these (or a leading role marker) could break out of its block and be read as instructions
 # (audit SEC-6). We neutralize the delimiters in every untrusted field before interpolation.
+# Includes the delimiters the dossier scan + ask paths use (contract/question/economics) and the
+# extraction tool names — so injected white-text like "</contract>" in a vendor PDF can't break out
+# of its data block and be read as instructions.
 _FENCE_RE = re.compile(
-    r"</?\s*(?:thread|correspondents|negotiation_playbook|brief|system)\b[^>]*>", re.I
+    r"</?\s*(?:thread|correspondents|negotiation_playbook|brief|system"
+    r"|contract|question|economics|record_findings|findings)\b[^>]*>",
+    re.I,
 )
 _ROLE_MARKER_RE = re.compile(r"(?im)^\s*(?:system|assistant|user)\s*:")
 

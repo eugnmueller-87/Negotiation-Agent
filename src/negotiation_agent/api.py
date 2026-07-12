@@ -24,6 +24,10 @@ import logging
 import os
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from negotiation_agent import scan
 
 try:
     from fastapi import FastAPI, Request, UploadFile
@@ -119,6 +123,8 @@ _MANDATE_TTL = int(os.getenv("PEITHO_MANDATE_TTL", "3600"))
 # the research endpoints (a paid Hades call, up to 150s) get a stricter one.
 _RATE_PER_MIN = int(os.getenv("PEITHO_RATE_PER_MIN", "20"))
 _RESEARCH_RATE_PER_MIN = int(os.getenv("PEITHO_RESEARCH_RATE_PER_MIN", "4"))
+# The live contract scan can fan out to several paid Haiku calls per upload — cap it hardest.
+_SCAN_RATE_PER_MIN = int(os.getenv("PEITHO_SCAN_RATE_PER_MIN", "2"))
 _rate_hits: dict[str, list[float]] = {}
 
 
@@ -130,6 +136,17 @@ def _drafter() -> DraftClient:
 # Tests replace this to inject a fake drafter (no network). Kept as a module hook so
 # api.py stays importable and the fake is swapped without a DI framework.
 draft_client_factory = _drafter
+
+
+def _extractor() -> scan.ExtractClient:
+    """Construct the live risk-scan extraction client. Overridden in tests (no network)."""
+    from negotiation_agent.scan_client import AnthropicExtractClient
+
+    return AnthropicExtractClient()
+
+
+# Tests replace this to inject a fake extractor — the same seam pattern as draft_client_factory.
+extraction_client_factory = _extractor
 
 
 def _full_mode(request: Request) -> bool:
@@ -317,6 +334,69 @@ def dossier_ask(req: AskRequest, request: Request) -> JSONResponse:
 # A PDF/DOCX upload is bulky (images) even though its text is small; cap the file at
 # 20 MB, read in bounded chunks so a lying Content-Length can't exhaust memory.
 _MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+
+
+@app.post("/dossier/scan", response_model=None)
+async def dossier_scan(file: UploadFile, request: Request) -> JSONResponse:
+    """Live risk scan of an uploaded contract — the paid counterpart to the /dossier example.
+
+    PDF in → LLM extraction across the anchor blocks → every finding's quote verified back to its
+    block → severities escalated + legal gate computed → the SAME Dossier shape the canned example
+    returns (``is_example=False``). FULL-MODE gated, FAIL-CLOSED: the public demo cannot trigger a
+    paid scan. The document is anchored BEFORE any LLM call, and a too-large contract is rejected
+    (413) before spend, so worst-case cost is bounded up front.
+    """
+    gate = _rate_gate(request, "scan", limit=_SCAN_RATE_PER_MIN)
+    if gate is not None:
+        return gate
+    if not _full_mode(request):
+        return _err(
+            "full_mode_only", "Live contract scan is available in the full version only.", 403
+        )
+
+    from starlette.concurrency import run_in_threadpool
+
+    from negotiation_agent import anchor
+    from negotiation_agent.scan import ScanError, scan_contract, too_large
+
+    # Bounded read — count what actually arrives, don't trust Content-Length.
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = await file.read(1024 * 1024)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > _MAX_UPLOAD_BYTES:
+            return _err("file_too_large", "file exceeds the 20 MB limit", 413)
+        chunks.append(chunk)
+    data = b"".join(chunks)
+    if not data:
+        return _err("empty_file", "the uploaded file is empty", 400)
+
+    # Anchor the document FIRST (off the event loop) — a bad/scanned PDF fails here, before spend.
+    try:
+        document = await run_in_threadpool(anchor.blocks_from_pdf, data)
+    except anchor.AnchorError as e:
+        return _err(e.code, str(e), 422)
+    if too_large(document):
+        return _err(
+            "contract_too_large",
+            "contract is too large to scan — split it or paste the key clauses.",
+            413,
+        )
+
+    try:
+        result = await run_in_threadpool(
+            scan_contract,
+            data,
+            extraction_client_factory(),
+            doc_title=file.filename or "contract.pdf",
+        )
+    except ScanError as e:
+        logger.warning("scan failed: %s", e)
+        return _err("scan_failed", "the scan could not be completed — try again shortly.", 503)
+    return JSONResponse(content=result.model_dump(mode="json"))
 
 
 @app.post("/extract-text", response_model=None)
