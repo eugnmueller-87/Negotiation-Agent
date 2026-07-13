@@ -801,10 +801,12 @@ function intelEssence(r){
   const terms=Object.fromEntries((ext.terms||[]).map(t=>[t.name,t.value]));
   const cell=(v)=> v!=null ? `<span class="esv">${esc(String(v))}</span>` : `<span class="esv"><span class="unk">not detected</span></span>`;
   const cells = [
-    ["Unit price", terms.price!=null?eur(terms.price):null],
+    // show a per-unit price when found; otherwise the total contract value, labelled honestly
+    terms.price!=null ? ["Unit price", eur(terms.price)]
+      : ["Total value", terms.total_value!=null?eur(terms.total_value):null],
     ["Payment", terms.payment_days!=null?`net-${terms.payment_days}`:null],
     ["Volume", terms.volume_units!=null?`${int(terms.volume_units)} u`:null],
-    ["Rebate", terms.rebate_pct!=null?`${num(terms.rebate_pct,1)}%`:null],
+    ["Term", terms.contract_months!=null?`${Math.round(terms.contract_months)} mo`:null],
     ["Expiry", life.expiration_date&&life.expiration_date.value!=null?esc(String(life.expiration_date.value)):null],
   ];
   const chips=[];
@@ -831,7 +833,9 @@ function intelResult(r){
   const terms=Object.fromEntries((ext.terms||[]).map(t=>[t.name,t.value]));
   const pic = [
     ["Supplier", ext.supplier_name?`<b>${esc(ext.supplier_name)}</b>`:`<span class="unk">—</span>`],
-    ["Unit price", terms.price!=null?`<b>${eur(terms.price)}</b>`:`<span class="unk">—</span>`],
+    terms.price!=null
+      ? ["Unit price", `<b>${eur(terms.price)}</b>`]
+      : ["Total value", terms.total_value!=null?`<b>${eur(terms.total_value)}</b>`:`<span class="unk">—</span>`],
     ["Payment", terms.payment_days!=null?`<b>net-${terms.payment_days}</b>`:`<span class="unk">—</span>`],
     ["Volume", terms.volume_units!=null?`<b>${int(terms.volume_units)} units</b>`:`<span class="unk">—</span>`],
     ["Expiry", grounded(life.expiration_date)],
@@ -1044,21 +1048,23 @@ function fillFormFromExtraction(r){
   // misleading "Nordwerk" — an empty field honestly says "not detected, type it in" (never guessed).
   if(!M.touched.has("supplier")) M.form.supplier = ext.supplier_name || "";
   if(!M.touched.has("category") && ext.category) M.form.category=ext.category;
-  // A "unit price" in the tens of thousands is almost certainly a TOTAL/annual figure the regex
-  // grabbed, not a per-unit price — pre-filling it as the per-unit target/floor produces nonsense
-  // (a €228k walk-away floor). Above this threshold, DON'T guess the per-unit levers; flag it and
-  // leave them for the human. The real fix for total-vs-unit is the LLM scan, not the regex.
+  // The backend now separates a per-unit `price` from a `total_value`. Only fill the per-unit
+  // levers (target/floor) from a real per-unit price. If the contract only gave a TOTAL, don't
+  // guess a per-unit number — surface it and leave the levers for the human. A defensive upper
+  // bound also catches a per-unit price that's implausibly large (a total the regex mislabeled).
   const PLAUSIBLE_UNIT_MAX = 10000;
-  if(terms.price!=null){
+  if(terms.price!=null && +terms.price<=PLAUSIBLE_UNIT_MAX){
     const p=+terms.price;
-    if(p<=PLAUSIBLE_UNIT_MAX){
-      if(!M.touched.has("supplierOpen")) M.form.supplierOpen=p;
-      if(!M.touched.has("target")) M.form.target=p;
-      if(!M.touched.has("floor")) M.form.floor=Math.round((p*1.17)*100)/100;
-    } else {
-      M.intel.priceNote=`The extracted €${int(p)} looks like a total or annual value, not a per-unit price — the per-unit target/floor were left for you to set.`;
-    }
+    if(!M.touched.has("supplierOpen")) M.form.supplierOpen=p;
+    if(!M.touched.has("target")) M.form.target=p;
+    if(!M.touched.has("floor")) M.form.floor=Math.round((p*1.17)*100)/100;
+  } else if(terms.total_value!=null){
+    M.intel.priceNote=`Found a total/annual contract value of ${eur(terms.total_value)}, not a per-unit price — set the per-unit target and floor yourself.`;
+  } else if(terms.price!=null){
+    M.intel.priceNote=`The extracted ${eur(terms.price)} looks like a total, not a per-unit price — the per-unit target/floor were left for you to set.`;
   }
+  if(terms.contract_months!=null && !M.touched.has("contractMax"))
+    M.form.contractMax=Math.round(+terms.contract_months);
   if(terms.payment_days!=null && !M.touched.has("paymentLever"))
     M.form.paymentLever=Math.max(+M.form.paymentLever, +terms.payment_days);
 }

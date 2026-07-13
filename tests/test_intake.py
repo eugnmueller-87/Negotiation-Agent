@@ -223,3 +223,55 @@ def test_bare_notice_period_is_not_a_payment_term():
     # "90 days notice" with no payment context anywhere -> payment_days absent, not 90
     ex = extract_contract("Either party may give 90 days notice of termination.")
     assert all(t.name != "payment_days" for t in ex.terms)
+
+
+# ── real-world extraction: the patterns a messy MSA (Phenom-style) actually uses ──
+_MSA = (
+    "This Master Subscription Agreement is entered into between Phenorn People, Inc., "
+    '("Phenom") with a place of business at Ambler, PA. '
+    "Total contract value: EUR 194,920.00 for the initial term. "
+    "Payment: Customer shall pay all fees, due within thirty (30) days of invoice. "
+    "The initial term is twenty-four (24) months."
+)
+
+
+def test_supplier_from_entered_into_between():
+    assert extract_contract(_MSA).supplier_name == "Phenorn People, Inc."
+
+
+def test_supplier_defined_term_form():
+    # "<Entity> ('DefinedTerm')" without a Supplier: label
+    ex = extract_contract('Services provided by Acme Cloud Ltd ("Provider") to the Customer.')
+    assert ex.supplier_name == "Acme Cloud Ltd"
+
+
+def test_total_value_is_not_labelled_a_unit_price():
+    ex = extract_contract(_MSA)
+    names = {t.name for t in ex.terms}
+    assert "total_value" in names and "price" not in names
+    assert next(t.value for t in ex.terms if t.name == "total_value") == 194920.0
+
+
+def test_real_per_unit_price_and_total_both_kept():
+    # a contract with BOTH a per-unit price and a total → both terms, distinct
+    ex = extract_contract("The unit price is EUR 12.00. Total contract value: EUR 500,000.")
+    by = {t.name: t.value for t in ex.terms}
+    assert by.get("price") == 12.0 and by.get("total_value") == 500000.0
+
+
+def test_payment_within_parenthesized_days():
+    assert _value("fees are due within thirty (30) days of invoice", "payment_days") == 30.0
+
+
+def test_months_from_parenthesized_digit():
+    assert _value("the initial term is twenty-four (24) months", "contract_months") == 24.0
+
+
+def test_new_patterns_stay_linear_on_pathological_input():
+    # the bounded [^.\n]{0,40} windows must keep the new patterns linear (ReDoS guard)
+    import time
+
+    payload = ("total contract value: EUR " * 3000) + ("payment due " * 3000)
+    t0 = time.perf_counter()
+    extract_contract(payload)
+    assert (time.perf_counter() - t0) < 1.0  # generous bound; real is ~0.2s

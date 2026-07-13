@@ -94,12 +94,33 @@ _PRICE_RE = re.compile(
 # net-N is the authoritative payment term. The bare "N days" fallback requires a payment
 # context word nearby and a leading \b, so "90 days notice" (a termination clause) is not
 # misread as payment_days. net-N is preferred by being the first alternative searched.
+# The third alternative catches "due/payable within thirty (30) days" — real contracts spell the
+# number and give the digit in parentheses; the parenthesized digit is authoritative. A bounded
+# [^.\n]{0,40} context window keeps it linear and stops it reaching across sentences.
 _PAYMENT_RE = re.compile(
     r"\bnet[\s-]?([0-9]{1,3})\b"
+    r"|\b(?:payment|due|invoice|payable|zahlungsziel|zahlbar)[^.\n]{0,40}?\bwithin\b"
+    r"[^.\n]{0,20}?\(([0-9]{1,3})\)\s*days?\b"
     r"|\b(?:payment|due|invoice|payable|zahlungsziel|zahlbar)[^.\n]{0,40}?\b([0-9]{1,3})\s*days?\b",
     re.I,
 )
-_MONTHS_RE = re.compile(r"\b([0-9]{1,3})\s*(?:month|months|mo)\b", re.I)
+# Contract length in months. Prefer a parenthesized digit ("twenty-four (24) months") when
+# present — spelled numbers are common in the term clause and the digit is authoritative.
+_MONTHS_RE = re.compile(
+    r"\(([0-9]{1,3})\)\s*(?:month|months)\b|\b([0-9]{1,3})\s*(?:month|months|mo)\b", re.I
+)
+
+# "Total contract value: EUR 194,920" is a TOTAL/annual figure, not a per-unit price. Extracting
+# it as `price` (the per-unit lever) is wrong — it produces a nonsense per-unit target/floor. Pull
+# it as a distinct `total_value` term the caller can label honestly and NOT treat as per-unit.
+_TOTAL_VALUE_RE = re.compile(
+    r"\b(?:total|aggregate|annual)\b[^.\n]{0,30}?"
+    r"\b(?:contract|subscription|order|deal)?\s*(?:value|fee|fees|price|amount|spend|cost)\b"
+    r"[^.\n]{0,20}?(?:€|eur|usd|\$)?\s*(" + _NUM + r")"
+    r"|(?:€|eur|usd|\$)\s*(" + _NUM + r")[^.\n]{0,20}?\b(?:total|in total|per annum|annually|"
+    r"for the (?:initial )?term)\b",
+    re.I,
+)
 # the (?<![\d.,]) stops a match from starting mid-token, so "1.2.3 units" is rejected
 # whole (no spurious "2.3") rather than backtracking into the malformed tail. It is ALSO the
 # ReDoS guard: without it an unanchored _NUM re-tries its greedy consume-then-fail at every
@@ -107,10 +128,27 @@ _MONTHS_RE = re.compile(r"\b([0-9]{1,3})\s*(?:month|months|mo)\b", re.I)
 # match-start mid-token in O(1), collapsing the scan to linear (verified 28 s → 4 ms).
 _VOLUME_RE = re.compile(rf"(?<![\d.,])({_NUM})\s*(?:units|pcs|pieces|stück)\b", re.I)
 _REBATE_RE = re.compile(rf"(?<![\d.,])({_NUM})\s*%\s*(?:rebate|discount|rabatt)", re.I)
-_SUPPLIER_RE = re.compile(
-    r"(?:supplier|vendor|lieferant|seller)\s*[:\-]?\s*"
-    r"([A-Z][\w&.\- ]{2,60}?(?:GmbH|AG|Ltd|Inc|B\.V\.|S\.A\.|SE|KG))",
-    re.I,
+# A legal-entity name: a capitalised run ending in a company suffix. Bounded length; the suffix
+# anchors the end so the run can't sprawl. Reused across the supplier patterns below.
+_ENTITY = (
+    r"[A-Z][\w&.,\- ]{2,60}?"
+    r"(?:GmbH|AG|Ltd|LLC|Inc|Corp|Co|B\.V\.|N\.V\.|S\.A\.|S\.R\.L\.|SE|KG|plc|Pty)\b\.?"
+)
+
+# Supplier name, most-specific pattern first:
+#  1. an explicit "Supplier:/Vendor: <Entity>" label
+#  2. "entered into between <Entity>, ..." — the classic MSA preamble (the FIRST party named is
+#     usually the supplier/provider). We take the first entity after "between".
+#  3. "by <Entity> ('defined term')" / "<Entity> ('Provider')" — the provider defined-term form.
+_SUPPLIER_RES = (
+    re.compile(
+        rf"(?:supplier|vendor|lieferant|seller|provider|licensor)\s*[:\-]?\s*({_ENTITY})", re.I
+    ),
+    re.compile(rf"\bentered into\b[^.\n]{{0,40}}?\bbetween\s+({_ENTITY})", re.I),
+    re.compile(rf"\bby and between\s+({_ENTITY})", re.I),
+    # "by <Entity> ("DefinedTerm")" — anchor on "by " so the entity can't greedily swallow the
+    # preceding words. \bby\s+ then a NON-space-leading name run bounded before the suffix.
+    re.compile(rf"\bby\s+({_ENTITY})\s*[,;]?\s*\(\s*[\"'“]", re.I),
 )
 
 
@@ -190,24 +228,47 @@ class RegexContractExtractor:
         truncated = len(full) > _MAX_CONTRACT_CHARS
         terms: list[ExtractedTerm] = []
 
-        def add(name: str, pattern: re.Pattern[str]) -> None:
+        def find(pattern: re.Pattern[str]) -> tuple[float, str] | None:
             m = pattern.search(text)
             if m is None:
-                return
+                return None
             v = _num(m)
-            if v is not None:
+            return (v, m.group(0).strip()) if v is not None else None
+
+        def add(name: str, pattern: re.Pattern[str]) -> None:
+            hit = find(pattern)
+            if hit is not None:
                 terms.append(
-                    ExtractedTerm(name=name, value=v, quote=m.group(0).strip(), confidence=0.8)
+                    ExtractedTerm(name=name, value=hit[0], quote=hit[1], confidence=0.8)
                 )
 
-        add("price", _PRICE_RE)
+        # Total contract value first — if the ONLY euro figure is a total, don't also mislabel it as
+        # a per-unit price. Emit `total_value` (a distinct term) and suppress `price` when the price
+        # match is the same amount as the total (i.e. the total IS the only money in the document).
+        total = find(_TOTAL_VALUE_RE)
+        price = find(_PRICE_RE)
+        if total is not None:
+            terms.append(
+                ExtractedTerm(name="total_value", value=total[0], quote=total[1], confidence=0.8)
+            )
+        # keep `price` only if it's a DIFFERENT figure from the total (a real per-unit price
+        # alongside the total) — otherwise the single figure is the total, not a unit price.
+        if price is not None and (total is None or price[0] != total[0]):
+            terms.append(
+                ExtractedTerm(name="price", value=price[0], quote=price[1], confidence=0.8)
+            )
+
         add("payment_days", _PAYMENT_RE)
         add("contract_months", _MONTHS_RE)
         add("volume_units", _VOLUME_RE)
         add("rebate_pct", _REBATE_RE)
 
-        sm = _SUPPLIER_RE.search(text)
-        supplier = sm.group(1).strip() if sm else None
+        supplier: str | None = None
+        for pattern in _SUPPLIER_RES:
+            sm = pattern.search(text)
+            if sm:
+                supplier = sm.group(1).strip().rstrip(",").strip()
+                break
 
         warnings: list[str] = []
         if truncated:
