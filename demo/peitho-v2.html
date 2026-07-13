@@ -892,14 +892,27 @@ function mandateView(){
     ${sectionTerms()}
     ${sectionSupplier()}
 
-    ${M.mandateError?`<div class="mx-warn">⚠ ${esc(M.mandateError)}</div>`:``}
+    <div id="mandateGateMsg">${prob?`<div class="mx-warn">⚠ ${esc(prob)}</div>`:``}</div>
     <div class="stepnav">
       <button class="btn ghost" id="backToUnderstandBtn"><svg width="14" height="14" style="transform:rotate(180deg)"><use href="#i-chev"/></svg> Back</button>
       <span class="sp"></span>
-      <span class="meta">target ${eur(f.target)} · floor ${eur(f.floor)} · ${activeTerms().length} terms</span>
+      <span class="meta" id="mandateGateMeta">target ${eur(f.target)} · floor ${eur(f.floor)} · ${activeTerms().length} terms</span>
       <button class="btn primary big" id="startBtn"${prob?" disabled title=\""+esc(prob)+"\"":""}><svg width="16" height="16"><use href="#i-seal"/></svg> Sign &amp; negotiate</button>
     </div>
   </div>`;
+}
+
+// Patch the sign-button + reason banner + footer readout in place when target/floor change, WITHOUT
+// a full render — a re-render would blur the number input the user is typing in. Same source of truth
+// (mandateProblem) as mandateView, so the two never disagree.
+function refreshMandateGate(){
+  const prob=mandateProblem();
+  const btn=$("#startBtn");
+  if(btn){ btn.disabled=!!prob; if(prob) btn.title=prob; else btn.removeAttribute("title"); }
+  const msg=$("#mandateGateMsg");
+  if(msg) msg.innerHTML = prob?`<div class="mx-warn">⚠ ${esc(prob)}</div>`:``;
+  const meta=$("#mandateGateMeta");
+  if(meta) meta.textContent=`target ${eur(M.form.target)} · floor ${eur(M.form.floor)} · ${activeTerms().length} terms`;
 }
 
 function sectionIntel(){
@@ -1142,9 +1155,9 @@ function bindMandate(){
   ["supplier","category","supplierContact","buyerSignature","target","floor","paymentLever","contractMax","supplierOpen"].forEach(k=>{
     const el=$("#f-"+k); if(el) el.oninput=()=>{
       M.form[k]= el.type==="number"?+el.value:el.value; M.touched.add(k);
-      // clear a shown mandate error once the human edits a mandate number, and refresh the
-      // commercial breakdown + button state live — but keep focus by not re-rendering on every keystroke
-      if((k==="target"||k==="floor") && M.mandateError){ M.mandateError=null; render(); }
+      // Editing target/floor changes whether the mandate is signable. Patch the button + reason
+      // banner in place (never a full render — that would steal focus from the input being typed in).
+      if(k==="target"||k==="floor") refreshMandateGate();
     };
   });
   app.querySelectorAll(".persona").forEach(b=>b.onclick=()=>{ M.form.persona=b.dataset.p; render(); });
@@ -1873,9 +1886,9 @@ function bindRun(){
 
 /* ══ negotiation loop ══════════════════════════════════════════════════════ */
 async function start(){
-  const problem = mandateProblem();
-  if(problem){ M.mandateError = problem; render(); return; }
-  M.mandateError = null;
+  // Guard: mandateView already disables the button when the mandate isn't signable, but re-check
+  // here so a stale click never fires a doomed request. The reason is shown by mandateView via prob.
+  if(mandateProblem()){ render(); return; }
   M.session = "s"+Math.random().toString(36).slice(2,10);
   M.transcript=[]; M.thread=[]; M.turns=[]; M.convergence=[];
   M.terminal=false; M.status="live"; M.error=null; M.tab="buyer"; M.busy=true;
