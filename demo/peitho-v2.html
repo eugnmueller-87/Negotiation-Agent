@@ -128,7 +128,10 @@
   .startrow .meta{font-size:12.5px;color:var(--ink-3);}
 
   /* setup panels (emphasis / terms / supplier) */
-  .panel{margin-top:20px;border:1px solid var(--line);border-radius:12px;background:var(--surface);padding:15px 18px;}
+  /* .panel aliases the unified card look: centered, 720px, consistent rhythm — so every mandate-step
+     panel matches the new hero + cards without rewriting each function's markup. */
+  .panel{max-width:720px;margin:0 auto 16px;border:1px solid var(--line);border-radius:14px;
+    background:var(--surface);padding:14px 16px;box-shadow:0 1px 0 rgba(0,0,0,.02);}
   .panel-hd{display:flex;align-items:center;gap:9px;font-size:13px;font-weight:650;color:var(--ink);}
   .panel-hd svg{color:var(--buyer);}
   .panel-sub{font-weight:400;font-size:11.5px;color:var(--ink-3);flex-basis:100%;margin-top:3px;margin-left:24px;line-height:1.45;}
@@ -916,9 +919,12 @@ Category: Corrugated packaging
            <textarea class="intel-ta" id="intelText">${esc(it.text)}</textarea></details>`
       : `<textarea class="intel-ta" id="intelText" placeholder="…or paste contract text here">${esc(it.text)}</textarea>`}
     <div class="intel-row">
-      <button class="btn primary" id="intelReadBtn" ${it.busy?"disabled":""}>${it.busy?'<span class="spin"></span> Reading…':'📄 Read the contract'}</button>
-      <button class="btn ghost" id="intelSampleBtn">load a sample</button>
-      <button class="btn ghost" id="cockpitBtn"><svg width="14" height="14"><use href="#i-shield"/></svg> Due-diligence example</button>
+      ${it.result
+        ? `<button class="btn ghost" id="intelReadBtn" ${it.busy?"disabled":""}>${it.busy?'<span class="spin"></span> Re-reading…':'↻ Re-read'}</button>
+           <button class="btn primary" id="scanRisksBtn"><svg width="14" height="14"><use href="#i-shield"/></svg> Scan for risks →</button>`
+        : `<button class="btn primary" id="intelReadBtn" ${it.busy?"disabled":""}>${it.busy?'<span class="spin"></span> Reading…':'📄 Read the contract'}</button>
+           <button class="btn ghost" id="intelSampleBtn">load a sample</button>
+           <button class="btn ghost" id="cockpitBtn"><svg width="14" height="14"><use href="#i-shield"/></svg> Risk cockpit example</button>`}
       <label class="intel-research"><input type="checkbox" id="intelResearch" checked> research supplier (Hades)</label>
       ${it.error?`<span class="intel-err">⚠ ${esc(it.error)}</span>`:""}
     </div>
@@ -1146,6 +1152,7 @@ function bindIntel(){
   const ta=$("#intelText"); if(ta) ta.oninput=()=>{ M.intel.text=ta.value; M.intel.filename=""; };
   const sb=$("#intelSampleBtn"); if(sb) sb.onclick=()=>{ M.intel.text=$("#intelSample").value; M.intel.filename=""; render(); };
   const cb=$("#cockpitBtn"); if(cb) cb.onclick=openCockpit;
+  const sr=$("#scanRisksBtn"); if(sr) sr.onclick=openCockpit;  // scan-for-risks → the risk cockpit
   const rb=$("#intelReadBtn"); if(rb) rb.onclick=readContract;
   // upload: file picker + drag-drop, both feed the same readFileIntoIntel path
   const fi=$("#intelFile"); if(fi) fi.onchange=e=>{ const f=e.target.files&&e.target.files[0]; if(f) readFileIntoIntel(f); };
