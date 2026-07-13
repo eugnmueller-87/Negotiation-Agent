@@ -558,6 +558,39 @@
     padding:10px 18px;border-radius:10px;font-size:13px;box-shadow:0 8px 30px rgba(0,0,0,.3);z-index:100;
     opacity:0;pointer-events:none;transition:opacity .2s;}
   .toast.show{opacity:1;}
+
+  /* ── PORTFOLIO ── */
+  .portfolio{max-width:820px;margin:0 auto;}
+  .proll{max-width:820px;margin:0 auto 18px;border:1px solid var(--line);border-radius:14px;
+    background:var(--surface);padding:14px 16px;display:flex;flex-wrap:wrap;gap:22px;align-items:center;}
+  .pstat{display:flex;flex-direction:column;gap:2px;min-width:150px;}
+  .pstat-k{font-size:11px;font-family:var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);}
+  .pstat-v{font-size:20px;font-weight:600;color:var(--good);}
+  .pstat-v.neg{color:var(--crit);}
+  .pstat-m{font-size:11px;color:var(--ink-3);}
+  .proll-empty{font-size:12.5px;color:var(--ink-3);}
+  .proll-note{flex-basis:100%;font-size:11.5px;font-family:var(--mono);color:var(--ink-3);}
+  .plist{max-width:820px;margin:0 auto;border:1px solid var(--line);border-radius:14px;
+    background:var(--surface);overflow:hidden;}
+  .prow{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line);cursor:pointer;}
+  .prow:last-child{border-bottom:none;}
+  .prow:hover{background:var(--surface-2);}
+  .pmain{flex:1;min-width:0;}
+  .pname{font-weight:600;font-size:14px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .pmeta{font-size:11.5px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .pnow{font-family:var(--mono);font-size:10px;color:var(--buyer);border:1px solid currentColor;
+    border-radius:5px;padding:1px 5px;margin-left:6px;vertical-align:2px;}
+  .psaved{font-size:13px;font-weight:600;color:var(--good);flex:none;}
+  .psaved.neg{color:var(--crit);}
+  .psm{padding:5px 10px;font-size:12px;flex:none;}
+  .pchip{flex:none;font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.04em;
+    border-radius:999px;padding:3px 9px;border:1px solid transparent;}
+  .pchip.escalated{background:color-mix(in srgb,var(--crit) 14%,transparent);color:var(--crit);border-color:color-mix(in srgb,var(--crit) 35%,transparent);}
+  .pchip.running{background:color-mix(in srgb,var(--buyer) 13%,transparent);color:var(--buyer);}
+  .pchip.draft{background:var(--surface-2);color:var(--ink-3);border-color:var(--line);}
+  .pchip.human-led{background:color-mix(in srgb,var(--warn) 15%,transparent);color:var(--warn);}
+  .pchip.closed{background:color-mix(in srgb,var(--good) 14%,transparent);color:var(--good);}
+  .pchip.cancelled{background:var(--surface-2);color:var(--ink-3);text-decoration:line-through;border-color:var(--line);}
 </style>
 </head>
 <body>
@@ -587,6 +620,7 @@
   </button>
   <div class="hspace"></div>
   <div class="hstat" id="hstat"><span class="dot"></span><span id="hstatText">checking backend…</span></div>
+  <button class="iconbtn" id="portfolioBtn"><svg width="15" height="15"><use href="#i-split"/></svg> Portfolio</button>
   <button class="iconbtn" id="themeBtn"><svg width="15" height="15"><use href="#i-sun"/></svg> Theme</button>
 </header>
 
@@ -636,7 +670,12 @@ function fmtTerm(name, x){
   return String(x);
 }
 
-const M = {
+// One project = one parallel negotiation. This factory returns EXACTLY the state
+// shape the app has always used as its singleton; `M` (below) is the active one.
+function freshProject(){
+  return {
+  id:"p"+Date.now().toString(36)+Math.random().toString(36).slice(2,7),
+  label:"", createdAt:new Date().toISOString().slice(0,10), cancelled:false,
   phase:"understand",
   form:{
     supplier:"Nordwerk Verpackung GmbH", category:"Corrugated packaging — annual supply",
@@ -661,7 +700,24 @@ const M = {
     selected:null, chat:[], asking:false, tab:"risk" },
   // setup fields the human has hand-edited — auto-fill from a contract must never clobber these
   touched:new Set(),
-};
+  };
+}
+
+/* ── the project portfolio (Phase 2) ─────────────────────────────────────────
+   A category manager runs MANY negotiations in parallel. Each project is one
+   full app-state object (exactly the singleton shape above). M is a *binding*
+   to the ACTIVE project — rebound on switch, never copied — so every existing
+   `M.` read/write keeps working, and async work that began on a project keeps
+   mutating that same object even if another becomes active. Switching away is
+   blocked while a request is in flight (see switchBlockReason). The registry
+   persists to localStorage ONLY: buyer-owned, never sent to a server or model. */
+const _PROJECTS_KEY = "peitho.projects.v1";
+let PROJECTS = loadProjects();
+let M = PROJECTS.length ? PROJECTS[PROJECTS.length-1] : freshProject();
+if(!PROJECTS.includes(M)) PROJECTS.push(M);
+// The portfolio is an APP-level overlay, not project state — a project's own
+// phase is never overwritten by visiting it, so reopening restores the phase.
+const APP = { portfolio: PROJECTS.length > 1 };
 
 // Every negotiable term the demo can put on the table. `weightKey` maps to M.form.
 const TERM_DEFS = [
@@ -832,14 +888,17 @@ function stepper(){
 }
 
 function render(){
-  const p=M.phase;
+  // the portfolio is an app-level overlay — the active project's phase is untouched
+  const p = APP.portfolio ? "portfolio" : M.phase;
   app.innerHTML =
-      p==="cockpit"   ? cockpitView()
+      p==="portfolio" ? portfolioView()
+    : p==="cockpit"   ? cockpitView()
     : p==="mandate"   ? mandateView()
     : p==="proof"     ? proofView()
     : (p==="running"||p==="live") ? runView()
     : understandView();
-  if(p==="cockpit") bindCockpit();
+  if(p==="portfolio") bindPortfolio();
+  else if(p==="cockpit") bindCockpit();
   else if(p==="mandate") bindMandate();
   else if(p==="proof") bindProof();
   else if(p==="running"||p==="live") bindRun();
@@ -855,7 +914,8 @@ function render(){
   ap(t);
   $("#themeBtn").onclick=()=>{ t=(document.documentElement.getAttribute("data-theme")==="dark")?"light":"dark"; ap(t); };
 })();
-$("#homeBtn").onclick=()=>{ if(M.phase!=="understand"){ M.phase="understand"; render(); } };
+$("#homeBtn").onclick=()=>{ if(APP.portfolio || M.phase!=="understand"){ APP.portfolio=false; M.phase="understand"; render(); } };
+$("#portfolioBtn").onclick=openPortfolio;
 
 /* ── setup view ── */
 /* ── STEP 1 · Understand ── */
@@ -1252,6 +1312,163 @@ function bindMandate(){
 function sectionPrior(){ return ""; }
 function proofView(){ return `<div class="setup">${stepper()}<div class="stephero"><div class="eyebrow">step 4 · proof &amp; audit</div><h1>Proof of floor</h1><p>Coming next: replay the negotiation and prove the engine never crossed your walk-away floor.</p></div><div class="stepnav"><button class="btn ghost" id="proofBackBtn">Back</button></div></div>`; }
 function bindProof(){ const b=$("#proofBackBtn"); if(b) b.onclick=()=>{ M.phase="running"; render(); }; }
+
+/* ── Registry persistence + project switching + STEP 0 · Portfolio ──
+   (insert after bindProof — function declarations hoist, so loadProjects()
+   is callable from the registry init that sits earlier in the file) */
+function saveProjects(){
+  try{
+    const plain = PROJECTS.map(p=>({...p, touched:[...(p.touched||[])]}));
+    localStorage.setItem(_PROJECTS_KEY, JSON.stringify(plain));
+  }catch(e){ /* storage disabled/full — the portfolio still works for this session */ }
+}
+function loadProjects(){
+  try{
+    const raw = JSON.parse(localStorage.getItem(_PROJECTS_KEY)||"[]");
+    if(!Array.isArray(raw)) return [];
+    return raw.map(p=>{
+      const fresh = freshProject();
+      const proj = {...fresh, ...p, form:{...fresh.form, ...(p.form||{})}};
+      proj.touched = new Set(Array.isArray(p.touched)?p.touched:[]);
+      // never revive an in-flight request as busy
+      proj.busy = false;
+      proj.resolve = {...fresh.resolve, ...(p.resolve||{}), busy:false};
+      proj.intel   = {...fresh.intel,   ...(p.intel||{}),   busy:false};
+      proj.cockpit = {...fresh.cockpit, ...(p.cockpit||{}), busy:false, asking:false};
+      return proj;
+    });
+  }catch(e){ return []; }
+}
+function saveActiveProject(){
+  // M IS the object inside PROJECTS (rebound, never copied) — this refreshes persistence only.
+  if(!PROJECTS.includes(M)) PROJECTS.push(M);
+  saveProjects();
+}
+// A human-readable reason a project switch must wait, or null when it's safe.
+function switchBlockReason(){
+  if(M.busy) return "a negotiation step is still in flight";
+  if(M.resolve && M.resolve.busy) return "a resolution is still being recorded";
+  if(M.intel && M.intel.busy) return "the contract is still being read";
+  if(M.cockpit && (M.cockpit.busy || M.cockpit.asking)) return "the risk cockpit is still working";
+  return null;
+}
+function openPortfolio(){ saveActiveProject(); APP.portfolio=true; render(); }
+function openProject(id){
+  const why = switchBlockReason();
+  if(why){ alert("Hold on — "+why+". Its result lands in that project either way; switch once it finishes."); return; }
+  const p = PROJECTS.find(x=>x.id===id);
+  if(!p) return;
+  saveActiveProject();
+  M = p;                    // rebind the singleton — every `M.` now reads this project
+  APP.portfolio = false;    // the project's own phase renders, exactly where it left off
+  render();
+}
+function newProject(){
+  const why = switchBlockReason();
+  if(why){ alert("Hold on — "+why+". Start the new negotiation once it finishes."); return; }
+  saveActiveProject();
+  M = freshProject();
+  PROJECTS.push(M);
+  APP.portfolio = false;
+  saveProjects();
+  render();
+}
+function cancelProject(id){
+  const p = PROJECTS.find(x=>x.id===id);
+  if(!p) return;
+  const st = projectStatus(p);
+  if(st==="closed"||st==="cancelled"||st==="human-led") return;
+  if(!confirm("Cancel this negotiation? It stays in the portfolio for the record.")) return;
+  p.cancelled = true;
+  saveProjects(); render();
+}
+// Status is DERIVED from real project state — never stored twice, never guessed.
+const STATUS_ORDER = {escalated:0, running:1, draft:2, "human-led":3, closed:4, cancelled:5};
+const STATUS_LABEL = {escalated:"needs you", running:"running", draft:"draft",
+  "human-led":"human-led", closed:"closed", cancelled:"cancelled"};
+function projectStatus(p){
+  if(p.cancelled) return "cancelled";
+  if(p.resolve && p.resolve.done) return p.resolve.done.action==="takeover" ? "human-led" : "closed";
+  if(p.status==="escalated") return "escalated";
+  if(p.status==="closed") return "closed";
+  if(p.session) return "running";
+  return "draft";
+}
+function statusChip(st){ return `<span class="pchip ${st}">${STATUS_LABEL[st]||st}</span>`; }
+function projectLabel(p){
+  return p.label || (p.form && p.form.supplier) || "Untitled negotiation";
+}
+// € rollup per METHOD — exact / heuristic / simulated are reported separately and
+// NEVER blended; a record without a real € figure books nothing (counted honestly).
+function savingsRollup(){
+  const sums = {exact:null, heuristic:null, simulated:null};
+  let unbooked = 0;
+  for(const r of loadSavingsLedger()){
+    if(r.saved_eur==null){ unbooked++; continue; }
+    // fail CLOSED on an unknown method: never default a mystery record into "exact" (that would
+    // book an unverified figure as real money). Only the three known methods are summed.
+    if(!(r.method in sums)){ unbooked++; continue; }
+    sums[r.method] = (sums[r.method]||0) + r.saved_eur;
+  }
+  return {sums, unbooked};
+}
+/* ── STEP 0 · Portfolio — every negotiation this desk is running ── */
+function portfolioView(){
+  const led = loadSavingsLedger();
+  const {sums, unbooked} = savingsRollup();
+  const rows = [...PROJECTS].sort((a,b)=>{
+    const d = (STATUS_ORDER[projectStatus(a)]??9)-(STATUS_ORDER[projectStatus(b)]??9);
+    return d!==0 ? d : String(b.createdAt||"").localeCompare(String(a.createdAt||""));
+  }).map(p=>{
+    const st = projectStatus(p);
+    const rec = p.session ? led.find(r=>r.project_id===p.session) : null;
+    const saved = (rec && rec.saved_eur!=null)
+      ? `<span class="psaved mono${rec.saved_eur<0?" neg":""}">${eur(rec.saved_eur)}</span>` : "";
+    const rounds = (p.turns && p.turns.length) ? "round "+p.turns.length+" / 6" : "not started";
+    const open = p===M ? `<span class="pnow">open</span>` : "";
+    const cancellable = st==="draft"||st==="running"||st==="escalated";
+    return `<div class="prow" data-id="${esc(p.id)}" role="button" tabindex="0">
+      ${statusChip(st)}
+      <div class="pmain">
+        <div class="pname">${esc(projectLabel(p))} ${open}</div>
+        <div class="pmeta">${esc((p.form && p.form.category)||"")} · ${rounds}${p.createdAt?" · "+esc(p.createdAt):""}</div>
+      </div>
+      ${saved}
+      ${cancellable?`<button class="btn ghost psm proj-cancel" data-id="${esc(p.id)}">Cancel</button>`:""}
+    </div>`;
+  }).join("");
+  const stat = (lbl, v, method) => v==null ? "" :
+    `<div class="pstat"><div class="pstat-k">${lbl}</div><div class="pstat-v mono${v<0?" neg":""}">${eur(v)}</div><div class="pstat-m">${method}</div></div>`;
+  const tiles = [stat("Booked savings", sums.exact, "exact — settled vs the entered baseline"),
+                 stat("Estimated savings", sums.heuristic, "heuristic — directional only"),
+                 stat("Simulated savings", sums.simulated, "simulated — not real money")].join("");
+  return `<div class="portfolio">
+    <div class="stephero">
+      <div class="eyebrow">portfolio</div>
+      <h1>Your negotiations</h1>
+      <p>Every project this desk is running, the ones that need a human first. Savings are booked per
+        method and never blended — a close without a € baseline books no number.</p>
+    </div>
+    <div class="proll">
+      ${tiles || `<div class="proll-empty">No bookable € savings yet — closing a negotiation with an annual-spend baseline books an exact figure.</div>`}
+      ${unbooked?`<div class="proll-note">${unbooked} close${unbooked>1?"s":""} without a € baseline — utility-only, not counted</div>`:""}
+    </div>
+    <div class="plist">${rows}</div>
+    <div class="stepnav"><span class="sp"></span>
+      <button class="btn primary big" id="newProjBtn"><svg width="15" height="15"><use href="#i-plus"/></svg> New negotiation</button>
+    </div>
+  </div>`;
+}
+function bindPortfolio(){
+  const nb=$("#newProjBtn"); if(nb) nb.onclick=newProject;
+  app.querySelectorAll(".prow").forEach(r=>{
+    const open=()=>openProject(r.dataset.id);
+    r.onclick=open;
+    r.onkeydown=e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); open(); } };
+  });
+  app.querySelectorAll(".proj-cancel").forEach(b=>b.onclick=e=>{ e.stopPropagation(); cancelProject(b.dataset.id); });
+}
+
 
 function bindIntel(){
   const ta=$("#intelText"); if(ta) ta.oninput=()=>{ M.intel.text=ta.value; M.intel.filename=""; };
@@ -2073,7 +2290,7 @@ function savingsInline(accepted, closedBy){
 function bindRun(){
   const s=$("#stepBtn"); if(s) s.onclick=()=>step();
   const a=$("#autoBtn"); if(a) a.onclick=autoplay;
-  const ag=$("#againBtn"); if(ag) ag.onclick=()=>{ M.phase="understand"; render(); };
+  const ag=$("#againBtn"); if(ag) ag.onclick=newProject;  // fresh project — the closed one stays in the portfolio
   app.querySelectorAll(".tab").forEach(b=>b.onclick=()=>{ M.tab=b.dataset.tab; render(); });
   bindResolve();
 }
@@ -2107,7 +2324,7 @@ async function resolveNegotiation(action){
       await post("/negotiate/resolve", body);  // records the human handover server-side
     }catch(e){ M.resolve.busy=false; M.resolve.error=e.message||"couldn't record the handover"; render(); return; }
     M.resolve.done={action:"takeover", resolved_by:actor, message:msg};
-    M.resolve.savingsRecord=null; M.resolve.busy=false; M.status="closed"; render(); return;
+    M.resolve.savingsRecord=null; M.resolve.busy=false; M.status="closed"; saveActiveProject(); render(); return;
   }
   // approve — retry once with the override if the offer is below the floor
   try{
@@ -2127,7 +2344,7 @@ async function resolveNegotiation(action){
     M.resolve.savingsRecord = bookSavings(res.accepted_numbers, "human");
     M.status="closed";
   }catch(e){ M.resolve.error=e.message||"couldn't approve the offer"; }
-  finally{ M.resolve.busy=false; render(); }
+  finally{ M.resolve.busy=false; saveActiveProject(); render(); }
 }
 
 // Compute + persist an EXACT savings record vs the entered annual-spend baseline. Never fakes a
@@ -2189,7 +2406,7 @@ async function start(){
     M.signed = res.signed_mandate;
     pushTurn(res.turn, /*round*/0);
   }catch(e){ M.error = e.message; }
-  finally{ M.busy=false; render(); }
+  finally{ M.busy=false; saveActiveProject(); render(); }
 }
 
 function pushTurn(turn, round){
@@ -2243,11 +2460,13 @@ async function step(){
     if(e.code==="negotiation_closed"){ M.terminal=true; M.status="closed"; }
     else if(e.code==="offer_unparseable"){ M.error="couldn't read the supplier's price/terms — step again"; }
     else M.error = e.message;
-  }finally{ M.busy=false; render(); }
+  }finally{ M.busy=false; saveActiveProject(); render(); }
 }
 
 async function autoplay(){
+  const sess = M.session;  // stop driving this loop if the user switches projects mid-run
   while(!M.terminal && !M.error){
+    if(M.session!==sess) return;
     await step();
     if(M.terminal||M.error) break;
     await new Promise(r=>setTimeout(r, 650));
