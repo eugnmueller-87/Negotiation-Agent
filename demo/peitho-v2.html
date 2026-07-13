@@ -621,6 +621,7 @@
   .proof-stamp.warn{border-color:var(--warn);background:color-mix(in srgb,var(--warn) 8%,transparent);color:var(--ink);}
   .proof-stamp.bad{border-color:var(--crit);background:color-mix(in srgb,var(--crit) 10%,transparent);color:var(--ink);}
   .proof-stamp svg{flex:none;margin-top:1px;}
+  .proof-stamp .ps-txt{flex:1;min-width:0;}
   .proof-ledger{display:flex;flex-direction:column;}
   .pl-row{display:flex;gap:12px;padding:11px 0;border-bottom:1px solid var(--line);}
   .pl-row:last-child{border-bottom:none;}
@@ -633,6 +634,17 @@
   .pl-gg{font-size:12px;color:var(--ink-3);margin-top:3px;line-height:1.45;}
   .pl-internal{margin-top:4px;}
   .pl-int{font-size:10.5px;color:var(--ink-3);background:var(--surface-2);padding:2px 7px;border-radius:5px;}
+  .proof-filed{max-width:820px;margin:0 auto 14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:13px;color:var(--ink-2);padding:11px 14px;border-radius:10px;background:color-mix(in srgb,var(--good) 8%,transparent);}
+  .proof-filed a{color:var(--buyer);text-decoration:none;font-weight:600;}
+  /* archive */
+  .ar-row{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line);cursor:pointer;}
+  .ar-row:last-child{border-bottom:none;} .ar-row:hover{background:var(--surface-2);}
+  .ar-ref{flex:none;font-size:11.5px;color:var(--buyer);min-width:150px;}
+  .ar-main{flex:1;min-width:0;}
+  .ar-sup{font-weight:600;font-size:14px;color:var(--ink);}
+  .ar-meta{font-size:11.5px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .ar-saved{font-size:13px;font-weight:600;color:var(--good);flex:none;} .ar-saved.neg{color:var(--crit);}
+  .ar-empty{padding:16px;font-size:13px;color:var(--ink-3);line-height:1.5;}
 </style>
 </head>
 <body>
@@ -663,6 +675,7 @@
   <div class="hspace"></div>
   <div class="hstat" id="hstat"><span class="dot"></span><span id="hstatText">checking backend…</span></div>
   <button class="iconbtn" id="portfolioBtn"><svg width="15" height="15"><use href="#i-split"/></svg> Portfolio</button>
+  <button class="iconbtn" id="archiveBtn"><svg width="15" height="15"><use href="#i-seal"/></svg> Archive</button>
   <button class="iconbtn" id="themeBtn"><svg width="15" height="15"><use href="#i-sun"/></svg> Theme</button>
 </header>
 
@@ -759,7 +772,7 @@ let M = PROJECTS.length ? PROJECTS[PROJECTS.length-1] : freshProject();
 if(!PROJECTS.includes(M)) PROJECTS.push(M);
 // The portfolio is an APP-level overlay, not project state — a project's own
 // phase is never overwritten by visiting it, so reopening restores the phase.
-const APP = { portfolio: PROJECTS.length > 1, batch:{ open:false, busy:false, error:null, text:"", result:null } };
+const APP = { portfolio: PROJECTS.length > 1, archiveOpen:false, archiveSel:null, batch:{ open:false, busy:false, error:null, text:"", result:null } };
 
 // Every negotiable term the demo can put on the table. `weightKey` maps to M.form.
 const TERM_DEFS = [
@@ -930,16 +943,18 @@ function stepper(){
 }
 
 function render(){
-  // the portfolio is an app-level overlay — the active project's phase is untouched
-  const p = APP.portfolio ? "portfolio" : M.phase;
+  // app-level overlays (archive, portfolio) sit above the active project's phase, which is untouched
+  const p = APP.archiveOpen ? "archive" : APP.portfolio ? "portfolio" : M.phase;
   app.innerHTML =
-      p==="portfolio" ? portfolioView()
+      p==="archive"   ? archiveView()
+    : p==="portfolio" ? portfolioView()
     : p==="cockpit"   ? cockpitView()
     : p==="mandate"   ? mandateView()
     : p==="proof"     ? proofView()
     : (p==="running"||p==="live") ? runView()
     : understandView();
-  if(p==="portfolio") bindPortfolio();
+  if(p==="archive") bindArchive();
+  else if(p==="portfolio") bindPortfolio();
   else if(p==="cockpit") bindCockpit();
   else if(p==="mandate") bindMandate();
   else if(p==="proof") bindProof();
@@ -956,7 +971,8 @@ function render(){
   ap(t);
   $("#themeBtn").onclick=()=>{ t=(document.documentElement.getAttribute("data-theme")==="dark")?"light":"dark"; ap(t); };
 })();
-$("#homeBtn").onclick=()=>{ if(APP.portfolio || M.phase!=="understand"){ APP.portfolio=false; M.phase="understand"; render(); } };
+$("#homeBtn").onclick=()=>{ if(APP.portfolio || APP.archiveOpen || M.phase!=="understand"){ APP.portfolio=false; APP.archiveOpen=false; M.phase="understand"; render(); } };
+{ const ab=$("#archiveBtn"); if(ab) ab.onclick=()=>{ saveActiveProject(); APP.archiveOpen=true; APP.portfolio=false; APP.archiveSel=null; render(); }; }
 $("#portfolioBtn").onclick=openPortfolio;
 
 /* ── setup view ── */
@@ -1378,6 +1394,7 @@ function proofView(){
   }
   // a below-floor HUMAN override is NOT an engine breach — it's an explicit, recorded human act
   const humanOverride = !!(resolved && resolved.below_floor);
+  const archived = archiveRecordFor(M);  // the filed record, if this deal was already finalized
 
   const ledger = turns.map((t,i)=>{
     const oc = {accept:"var(--good)", counter:"var(--buyer)", escalate:"var(--warn)"}[t.outcome]||"var(--ink-3)";
@@ -1397,10 +1414,10 @@ function proofView(){
   }).join("");
 
   const stamp = breach
-    ? `<div class="proof-stamp bad"><svg width="18" height="18"><use href="#i-x"/></svg> A below-floor acceptance was found — this should never happen; report it.</div>`
+    ? `<div class="proof-stamp bad"><svg width="18" height="18"><use href="#i-x"/></svg><div class="ps-txt">A below-floor acceptance was found — this should never happen; report it.</div></div>`
     : humanOverride
-    ? `<div class="proof-stamp warn"><svg width="18" height="18"><use href="#i-shield"/></svg> The engine never crossed the floor. The deal closed <b>below the floor by explicit human override</b> (${esc(resolved.resolved_by||"a named buyer")}) — recorded as a human act, not an engine concession.</div>`
-    : `<div class="proof-stamp ok"><svg width="18" height="18"><use href="#i-check"/></svg> ✓ The engine never crossed your walk-away floor${floorKnown?"":" (structure verified from the transcript; the floor value stays buyer-private)"}. Verified by replaying every decision.</div>`;
+    ? `<div class="proof-stamp warn"><svg width="18" height="18"><use href="#i-shield"/></svg><div class="ps-txt">The engine never crossed the floor. The deal closed <b>below the floor by an explicit human override</b> by ${esc(resolved.resolved_by||"a named buyer")} — recorded as a human act, not an engine concession.</div></div>`
+    : `<div class="proof-stamp ok"><svg width="18" height="18"><use href="#i-check"/></svg><div class="ps-txt">✓ The engine never crossed your walk-away floor${floorKnown?"":" (structure verified from the transcript; the floor value stays buyer-private)"}. Verified by replaying every decision.</div></div>`;
 
   return `<div class="setup">
     ${stepper()}
@@ -1423,16 +1440,22 @@ function proofView(){
     <div class="card"><div class="card-hd"><svg width="14" height="14"><use href="#i-split"/></svg> Decision ledger <span class="card-sub">${turns.length} rounds · replayable</span></div>
       <div class="card-bd"><div class="proof-ledger">${ledger||`<div class="mx-empty">No rounds recorded.</div>`}</div></div>
     </div>
+    ${archived
+      ? `<div class="proof-filed"><svg width="16" height="16"><use href="#i-check"/></svg> Filed as <b class="mono">${esc(archived.ref)}</b> on ${esc(archived.finalizedAt.slice(0,10))} by ${esc(archived.finalizedBy)}. <a href="#" id="proofToArchive">Open the archive →</a></div>`
+      : ``}
     <div class="stepnav">
       <button class="btn ghost" id="proofBackBtn"><svg width="14" height="14" style="transform:rotate(180deg)"><use href="#i-chev"/></svg> Back to the negotiation</button>
       <span class="sp"></span>
       <button class="btn ghost" id="proofExportBtn">↓ Export the audit record</button>
+      ${archived?`` : `<button class="btn primary big" id="finalizeBtn"><svg width="15" height="15"><use href="#i-seal"/></svg> Finalize &amp; file this deal</button>`}
     </div>
   </div>`;
 }
 function bindProof(){
   const b=$("#proofBackBtn"); if(b) b.onclick=()=>{ M.phase="running"; render(); };
   const e=$("#proofExportBtn"); if(e) e.onclick=exportAuditRecord;
+  const f=$("#finalizeBtn"); if(f) f.onclick=()=>{ const rec=finalizeDeal(); if(rec){ APP.archiveOpen=true; APP.portfolio=false; render(); } };
+  const ta=$("#proofToArchive"); if(ta) ta.onclick=e=>{ e.preventDefault(); APP.archiveOpen=true; APP.portfolio=false; render(); };
 }
 
 // Export the full audit record — mandate ref + every decision — as a JSON file the buyer keeps.
@@ -1755,6 +1778,93 @@ function bindPortfolio(){
     r.onkeydown=e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); open(); } };
   });
   app.querySelectorAll(".proj-cancel").forEach(b=>b.onclick=e=>{ e.stopPropagation(); cancelProject(b.dataset.id); });
+}
+
+/* ── The deal archive — finalized negotiations, filed under a ref number ── */
+function archiveView(){
+  const list = loadArchive().slice().sort((a,b)=>String(b.finalizedAt||"").localeCompare(String(a.finalizedAt||"")));
+  const sel = APP.archiveSel ? list.find(a=>a.ref===APP.archiveSel) : null;
+  if(sel) return archiveDetail(sel);
+  const rows = list.map(a=>{
+    const terms = a.finalTerms ? Object.entries(a.finalTerms).map(([k,v])=>fmtTerm(k,v)).join(" · ") : "—";
+    const saved = (a.savings && a.savings.saved_eur!=null)
+      ? `<span class="ar-saved mono${a.savings.saved_eur<0?" neg":""}">${eur(a.savings.saved_eur)}</span>` : "";
+    return `<div class="ar-row" data-ref="${esc(a.ref)}" role="button" tabindex="0">
+      <div class="ar-ref mono">${esc(a.ref)}</div>
+      <div class="ar-main">
+        <div class="ar-sup">${esc(a.supplier||"—")}${a.belowFloorOverride?` <span class="pchip human-led">override</span>`:""}</div>
+        <div class="ar-meta">${esc(a.finalizedAt.slice(0,10))} · ${esc(a.closedBy)} · ${esc(terms)}</div>
+      </div>
+      ${saved}
+    </div>`;
+  }).join("");
+  const total = list.reduce((s,a)=>s+((a.savings&&a.savings.method==="exact"&&a.savings.saved_eur!=null)?a.savings.saved_eur:0),0);
+  const anyExact = list.some(a=>a.savings&&a.savings.method==="exact"&&a.savings.saved_eur!=null);
+  return `<div class="portfolio">
+    <div class="stephero">
+      <div class="eyebrow">archive</div>
+      <h1>Filed deals</h1>
+      <p>Every finalized negotiation, under its own reference number — the record you check to see
+        how a deal went. Buyer-owned, in this browser only.</p>
+    </div>
+    ${list.length?`<div class="proll">
+      ${anyExact?`<div class="pstat"><div class="pstat-k">Filed savings (exact)</div><div class="pstat-v mono${total<0?" neg":""}">${eur(total)}</div><div class="pstat-m">settled vs baseline · human-resolved deals</div></div>`:`<div class="proll-empty">No € baseline on the filed deals yet — utility-only.</div>`}
+      <span class="sp" style="flex:1"></span><span class="pstat-m">${list.length} filed</span>
+    </div>
+    <div class="plist">${rows}</div>`
+    : `<div class="plist"><div class="ar-empty">No deals filed yet. Close a negotiation, open <b>Proof &amp; audit</b>, and hit <b>Finalize &amp; file</b> to archive it under a ref number.</div></div>`}
+  </div>`;
+}
+
+function archiveDetail(a){
+  const terms = a.finalTerms ? Object.entries(a.finalTerms).map(([k,v])=>`<span class="chip">${esc(fmtTerm(k,v))}</span>`).join(" ") : "—";
+  const ledger = (a.rounds||[]).map(t=>{
+    const oc={accept:"var(--good)",counter:"var(--buyer)",escalate:"var(--warn)"}[t.outcome]||"var(--ink-3)";
+    const nums=Object.entries(t.approved_numbers||{}).map(([k,v])=>fmtTerm(k,v)).join(" · ")||"—";
+    return `<div class="pl-row"><div class="pl-n mono">R${t.round}</div><div class="pl-body">
+      <div class="pl-oc"><span class="mono" style="color:${oc}">${(t.outcome||"").toUpperCase()}</span><span class="pl-reason mono">${esc(t.reason||"")}</span></div>
+      <div class="pl-nums">figures released: <span class="mono">${esc(nums)}</span></div></div></div>`;
+  }).join("");
+  const sav = a.savings && a.savings.saved_eur!=null
+    ? `<span class="mono${a.savings.saved_eur<0?" neg":""}">${eur(a.savings.saved_eur)}${a.savings.saving_pct!=null?" ("+num(a.savings.saving_pct,1)+"%)":""}</span> · method ${esc(a.savings.method)}`
+    : "utility only — no € baseline";
+  return `<div class="portfolio">
+    <div class="stephero">
+      <div class="eyebrow">archived deal · ${esc(a.ref)}</div>
+      <h1>${esc(a.supplier||"Filed deal")}</h1>
+      <p>Filed ${esc(a.finalizedAt.slice(0,10))} by ${esc(a.finalizedBy)} · closed by ${esc(a.closedBy)}.</p>
+    </div>
+    <div class="card"><div class="card-bd">
+      <div class="proof-kv"><span>Deal ref</span><b class="mono">${esc(a.ref)}</b></div>
+      <div class="proof-kv"><span>Category</span><span>${esc(a.category||"—")}</span></div>
+      <div class="proof-kv"><span>Final terms</span><span>${terms}</span></div>
+      <div class="proof-kv"><span>Savings</span><span>${sav}</span></div>
+      <div class="proof-kv"><span>Mandate ref (HMAC)</span><span class="mono">${a.mandateRef?esc(a.mandateRef.slice(0,24)):"—"}</span></div>
+      ${a.belowFloorOverride?`<div class="proof-note">⚠ Closed below the walk-away floor by an explicit human override — recorded as a human act, not an engine concession.</div>`:``}
+    </div></div>
+    <div class="card"><div class="card-hd"><svg width="14" height="14"><use href="#i-split"/></svg> Decision ledger <span class="card-sub">${(a.rounds||[]).length} rounds</span></div>
+      <div class="card-bd"><div class="proof-ledger">${ledger||`<div class="mx-empty">No rounds recorded.</div>`}</div></div>
+    </div>
+    <div class="stepnav">
+      <button class="btn ghost" id="arBack"><svg width="14" height="14" style="transform:rotate(180deg)"><use href="#i-chev"/></svg> Back to the archive</button>
+      <span class="sp"></span>
+      <button class="btn ghost" id="arExport">↓ Export this record</button>
+    </div>
+  </div>`;
+}
+
+function bindArchive(){
+  app.querySelectorAll(".ar-row").forEach(r=>{
+    const open=()=>{ APP.archiveSel=r.dataset.ref; render(); };
+    r.onclick=open; r.onkeydown=e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); open(); } };
+  });
+  const back=$("#arBack"); if(back) back.onclick=()=>{ APP.archiveSel=null; render(); };
+  const ex=$("#arExport"); if(ex) ex.onclick=()=>{
+    const a=loadArchive().find(x=>x.ref===APP.archiveSel); if(!a) return;
+    const blob=new Blob([JSON.stringify({_format:"peitho.archived-deal.v1",...a},null,2)],{type:"application/json"});
+    const url=URL.createObjectURL(blob); const el=document.createElement("a");
+    el.href=url; el.download=a.ref+".json"; document.body.appendChild(el); el.click(); el.remove(); URL.revokeObjectURL(url);
+  };
 }
 
 
@@ -2677,6 +2787,58 @@ function portfolioSavedTotal(){
   const led = loadSavingsLedger().filter(r=>r.method==="exact" && r.saved_eur!=null);
   if(!led.length) return null;
   return led.reduce((s,r)=>s+r.saved_eur, 0);
+}
+
+/* ══ the deal archive — FINALIZE a closed negotiation into a filed record ═══════
+   Finalizing freezes a closed deal: it mints a stable REF number, stamps the date +
+   who finalized it, and stores the full audit trail (terms, savings, decision ledger,
+   mandate ref) so it can be reviewed later. Buyer-owned localStorage only. */
+const _ARCHIVE_KEY = "peitho.archive.v1";
+function loadArchive(){
+  try{ const a=JSON.parse(localStorage.getItem(_ARCHIVE_KEY)||"[]"); return Array.isArray(a)?a:[]; }catch(e){ return []; }
+}
+function saveArchive(list){
+  try{ localStorage.setItem(_ARCHIVE_KEY, JSON.stringify(list)); }catch(e){ /* storage full/off */ }
+}
+// A stable, human-readable deal ref: PTH-YYYYMMDD-XXXX (XXXX from the session so it's reproducible
+// per deal, not random each render). Uppercased base36 of the session id.
+function dealRef(project){
+  const d=(project.finalizedAt||new Date().toISOString()).slice(0,10).replace(/-/g,"");
+  const tail=String(project.session||project.id||"").replace(/[^a-z0-9]/gi,"").slice(-4).toUpperCase().padStart(4,"0");
+  return `PTH-${d}-${tail}`;
+}
+function isFinalized(project){ return loadArchive().some(a=>a.project_id===project.id); }
+function archiveRecordFor(project){ return loadArchive().find(a=>a.project_id===project.id)||null; }
+
+// Finalize the ACTIVE project: freeze the audit trail into the archive under a ref number. Only a
+// closed/resolved deal can be finalized (nothing to file mid-negotiation). Idempotent — re-finalizing
+// returns the existing record rather than minting a second ref.
+function finalizeDeal(){
+  const closed = M.status==="closed" || (M.resolve && M.resolve.done);
+  if(!closed){ alert("Finalize is available once the negotiation has closed."); return null; }
+  const existing = archiveRecordFor(M);
+  if(existing) return existing;
+  const resolved = M.resolve && M.resolve.done;
+  const finalizedAt = new Date().toISOString();
+  const finalTerms = resolved && resolved.accepted ? resolved.accepted
+    : ([...M.turns].reverse()[0]||{}).approved_numbers || {};
+  const rec = {
+    ref: dealRef({finalizedAt, session:M.session, id:M.id}),
+    project_id:M.id, session:M.session, finalizedAt,
+    finalizedBy:(M.resolve&&M.resolve.actor)||M.form.buyerSignature||"Procurement Team",
+    supplier:M.form.supplier, category:M.form.category,
+    closedBy: resolved ? (resolved.action==="takeover"?"human takeover":"human approval") : "engine acceptance",
+    belowFloorOverride: !!(resolved && resolved.below_floor),
+    finalTerms,
+    savings: (M.resolve&&M.resolve.savingsRecord) || null,
+    mandateRef: M.signed ? M.signed.sig : null,
+    rounds:(M.turns||[]).map(t=>({round:t.round_index, outcome:t.outcome, reason:t.reason_tag,
+      approved_numbers:t.approved_numbers, internal:t.internal||null})),
+  };
+  const list=loadArchive(); list.push(rec); saveArchive(list);
+  // mark the live project archived so the portfolio shows it as filed
+  M.status="closed"; M.archived=true; saveActiveProject();
+  return rec;
 }
 
 /* ══ negotiation loop ══════════════════════════════════════════════════════ */
