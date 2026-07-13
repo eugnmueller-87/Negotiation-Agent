@@ -525,6 +525,24 @@
   .banner.escalated{border-color:var(--warn);}
   .banner .t{font-family:var(--serif);font-size:17px;font-weight:600;}
   .banner .d{font-size:13px;color:var(--ink-2);}
+  /* human-fallback resolution controls on an escalated negotiation */
+  .resolve{margin-top:12px;display:flex;flex-direction:column;gap:10px;width:100%;}
+  .resolve-offer{font-size:13px;color:var(--ink);background:var(--surface-2);padding:8px 11px;border-radius:8px;}
+  .resolve-baseline label,.resolve-actor label{display:block;font-size:12px;font-weight:600;color:var(--ink-2);margin-bottom:4px;}
+  .resolve-baseline label i,.resolve-actor label i{font-weight:400;color:var(--ink-3);font-style:normal;}
+  .resolve .in{width:100%;max-width:340px;}
+  .resolve textarea.in{max-width:none;font-family:inherit;}
+  .resolve-btns{display:flex;gap:9px;flex-wrap:wrap;align-items:center;}
+  .resolve-note{font-size:11.5px;color:var(--ink-3);line-height:1.45;max-width:640px;}
+  .savings-line{margin-top:10px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;font-size:13px;
+    padding:9px 12px;border-radius:9px;background:color-mix(in srgb,var(--good) 8%,transparent);}
+  .savings-line.neg{background:color-mix(in srgb,var(--warn) 10%,transparent);}
+  .savings-line.muted{background:var(--surface-2);color:var(--ink-3);}
+  .savings-line .sv-k{font-family:var(--mono);font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-3);}
+  .savings-line .sv-v{font-size:16px;font-weight:700;color:var(--good);}
+  .savings-line.neg .sv-v{color:var(--warn);}
+  .savings-line .sv-sub{color:var(--ink-2);font-size:12px;}
+  .savings-line .sv-total{margin-left:auto;color:var(--ink-2);font-size:12px;}
 
   /* composer */
   .composer{border-top:1px solid var(--line);padding:12px 14px;background:var(--surface-2);
@@ -634,6 +652,8 @@ const M = {
   },
   session:null, signed:null, transcript:[], thread:[], turns:[],
   tab:"buyer", busy:false, status:"live", terminal:false, error:null, convergence:[],
+  // human resolution of an escalated negotiation (approve / take over) + the savings it books
+  resolve:{ busy:false, error:null, done:null, takeover:false, actor:"", annualSpend:"" },
   // contract intelligence — `filename` is the uploaded file's name (display only)
   intel:{ open:false, busy:false, text:"", filename:"", result:null, accepted:{}, error:null, applied:false },
   // due-diligence cockpit — the risk dossier, filters, and the in-tool Ask-Opus thread
@@ -1951,6 +1971,8 @@ function chartSVG(){
 function banner(){
   const closed = M.status==="closed";
   const last = [...M.turns].reverse()[0];
+  // A human already resolved the escalation → show the outcome + savings, not the handoff prompt.
+  if(M.resolve.done) return resolvedBanner();
   return `<div class="banner ${closed?"":"escalated"}">
     <svg width="26" height="26" style="color:${closed?"var(--good)":"var(--warn)"}"><use href="#i-${closed?"check":"x"}"/></svg>
     <div style="flex:1;min-width:220px">
@@ -1958,8 +1980,93 @@ function banner(){
       <div class="d">${closed
         ? `Final package: ${last?Object.entries(last.approved_numbers).map(([k,v])=>fmtTerm(k,v)).join(" · "):"—"}. Every quoted figure is engine-approved and replayable from the transcript.`
         : `The engine reached its reservation floor without a clearing offer and handed off — exactly where a human should take over. It never conceded past the floor.`}</div>
+      ${closed?savingsInline(last?last.approved_numbers:null,"engine"):resolveControls()}
+    </div>
+    ${closed?`<button class="btn ghost" id="againBtn">New negotiation</button>`:``}
+  </div>`;
+}
+
+// The last thing the supplier actually offered — their own stated figures (the terms the fold
+// cached from their message). This is what an "approve" closes on.
+function lastSupplierOffer(){
+  const t = [...M.transcript].reverse()[0];
+  return t && t.terms ? t.terms : null;
+}
+
+// The human-fallback controls on an escalated negotiation: approve the supplier's current offer,
+// or take over and write to them. A baseline annual-spend field (optional) turns utility into €.
+function resolveControls(){
+  const r=M.resolve, off=lastSupplierOffer();
+  if(r.takeover) return takeoverCompose();
+  const offerLine = off ? Object.entries(off).map(([k,v])=>fmtTerm(k,v)).join(" · ") : "—";
+  return `<div class="resolve">
+    <div class="resolve-offer">Supplier's current offer: <b>${esc(offerLine)}</b></div>
+    <div class="resolve-baseline">
+      <label>Annual spend on this contract <i>· optional — needed to show € savings</i></label>
+      <input class="in" type="number" id="rvSpend" placeholder="e.g. 250000" value="${esc(r.annualSpend)}">
+    </div>
+    <div class="resolve-actor">
+      <label>Your name <i>· recorded on the close</i></label>
+      <input class="in" id="rvActor" placeholder="e.g. e.mueller" value="${esc(r.actor)}">
+    </div>
+    ${r.error?`<div class="mx-warn">⚠ ${esc(r.error)}</div>`:``}
+    <div class="resolve-btns">
+      <button class="btn primary" id="rvApprove" ${r.busy?"disabled":""}>${r.busy?'<span class="spin"></span> …':'✓ Approve supplier’s current offer'}</button>
+      <button class="btn ghost" id="rvTakeover" ${r.busy?"disabled":""}>✎ Take over &amp; write to supplier</button>
+      <button class="btn ghost" id="againBtn">New negotiation</button>
+    </div>
+    <div class="resolve-note">Approving closes the deal at the supplier's own stated figures. If that's below your walk-away floor, we'll ask you to confirm the override — the engine never crossed it; you would.</div>
+  </div>`;
+}
+
+// Take-over mode: the engine is out; the human composes the message freely. The draft is NOT
+// figure-guarded (their mandate authority), but we keep the honest note about what this means.
+function takeoverCompose(){
+  const off=lastSupplierOffer();
+  const offerLine = off ? Object.entries(off).map(([k,v])=>fmtTerm(k,v)).join(" · ") : "—";
+  return `<div class="resolve">
+    <div class="resolve-offer">You're now writing to the supplier directly. Their last offer: <b>${esc(offerLine)}</b></div>
+    <textarea class="in" id="rvMsg" rows="5" placeholder="Write your message to the supplier…"></textarea>
+    <div class="resolve-btns">
+      <button class="btn primary" id="rvSend">Record my message</button>
+      <button class="btn ghost" id="rvBack">Back</button>
+    </div>
+    <div class="resolve-note">The engine has stepped aside — you own this thread now. In this demo the message is recorded locally (no email is sent); a real send channel is a later phase.</div>
+  </div>`;
+}
+
+// After a human close: show what was booked + the € savings (or the honest "no baseline" state).
+function resolvedBanner(){
+  const d=M.resolve.done;
+  const isTakeover = d.action==="takeover";
+  return `<div class="banner">
+    <svg width="26" height="26" style="color:var(--good)"><use href="#i-check"/></svg>
+    <div style="flex:1;min-width:220px">
+      <div class="t">${isTakeover?"Handed to you":"Deal approved by a human"}</div>
+      <div class="d">${isTakeover
+        ? `You took over the thread from ${esc(d.resolved_by||"the buyer")}. The engine is out; your message was recorded.`
+        : `Closed by ${esc(d.resolved_by||"a human")} at the supplier's stated terms: ${d.accepted?Object.entries(d.accepted).map(([k,v])=>fmtTerm(k,v)).join(" · "):"—"}.${d.below_floor?" <b>Below the walk-away floor</b> — an explicit human override; the engine never crossed it.":""}`}</div>
+      ${!isTakeover?savingsInline(d.accepted,"human"):``}
     </div>
     <button class="btn ghost" id="againBtn">New negotiation</button>
+  </div>`;
+}
+
+// The € savings line + running portfolio total. Exact method only (settled vs baseline); shown even
+// when NEGATIVE (a price-raising renewal is still the truth); when no baseline was entered we show
+// the utility state honestly and never invent a €. Reads the saved record for THIS close.
+function savingsInline(accepted, closedBy){
+  const rec = M.resolve.savingsRecord;
+  const total = portfolioSavedTotal();
+  if(!rec || rec.saved_eur==null){
+    return `<div class="savings-line muted">No annual spend entered — savings shown in € once you add a baseline. ${total!=null?`Portfolio saved so far: <b>${eur(total)}</b>.`:""}</div>`;
+  }
+  const neg = rec.saved_eur < 0;
+  return `<div class="savings-line ${neg?"neg":"pos"}">
+    <span class="sv-k">Savings booked</span>
+    <span class="sv-v mono">${neg?"−":""}${eur(Math.abs(rec.saved_eur))}/yr</span>
+    <span class="sv-sub">${neg?"price rose vs baseline":`${num(rec.saving_pct,1)}% below baseline`} · exact, method=${esc(rec.method)}</span>
+    ${total!=null?`<span class="sv-total">Portfolio: <b>${eur(total)}</b> saved</span>`:""}
   </div>`;
 }
 
@@ -1968,6 +2075,102 @@ function bindRun(){
   const a=$("#autoBtn"); if(a) a.onclick=autoplay;
   const ag=$("#againBtn"); if(ag) ag.onclick=()=>{ M.phase="understand"; render(); };
   app.querySelectorAll(".tab").forEach(b=>b.onclick=()=>{ M.tab=b.dataset.tab; render(); });
+  bindResolve();
+}
+
+// Wire the escalation-resolution controls (present only on an escalated, unresolved banner).
+function bindResolve(){
+  const sp=$("#rvSpend"); if(sp) sp.oninput=()=>{ M.resolve.annualSpend=sp.value; };
+  const ac=$("#rvActor"); if(ac) ac.oninput=()=>{ M.resolve.actor=ac.value; };
+  const ap=$("#rvApprove"); if(ap) ap.onclick=()=>resolveNegotiation("approve");
+  const to=$("#rvTakeover"); if(to) to.onclick=()=>{ M.resolve.takeover=true; M.resolve.error=null; render(); };
+  const bk=$("#rvBack"); if(bk) bk.onclick=()=>{ M.resolve.takeover=false; render(); };
+  const snd=$("#rvSend"); if(snd) snd.onclick=()=>resolveNegotiation("takeover");
+}
+
+/* ══ human resolution of an escalated negotiation ══════════════════════════ */
+// Approve the supplier's current offer, or take over the thread. Posts to /negotiate/resolve;
+// on an approve the server returns the settlement at the supplier's OWN raw figures (never the
+// clamped view) and we book the € savings vs the entered baseline.
+async function resolveNegotiation(action){
+  const actor = (M.resolve.actor||"").trim();
+  if(!actor){ M.resolve.error="Enter your name — it's recorded on the close."; render(); return; }
+  M.resolve.busy=true; M.resolve.error=null; render();
+  const body = {
+    signed_mandate:M.signed, transcript:{turns:M.transcript}, session_id:M.session,
+    action, resolved_by:actor, correspondents:correspondents(), context:negotiationContext(),
+  };
+  if(action==="takeover"){
+    // client-held record for this slice (server-side takeover audit arrives with the store phase)
+    const msg=($("#rvMsg")&&$("#rvMsg").value||"").trim();
+    try{
+      await post("/negotiate/resolve", body);  // records the human handover server-side
+    }catch(e){ M.resolve.busy=false; M.resolve.error=e.message||"couldn't record the handover"; render(); return; }
+    M.resolve.done={action:"takeover", resolved_by:actor, message:msg};
+    M.resolve.savingsRecord=null; M.resolve.busy=false; M.status="closed"; render(); return;
+  }
+  // approve — retry once with the override if the offer is below the floor
+  try{
+    let res;
+    try{
+      res = await post("/negotiate/resolve", body);
+    }catch(e){
+      if(e.code==="below_floor"){
+        if(!confirm("The supplier's offer is BELOW your walk-away floor. The engine never crosses it — approving is your explicit override. Proceed?")){
+          M.resolve.busy=false; render(); return;
+        }
+        res = await post("/negotiate/resolve", {...body, override_below_floor:true});
+      } else { throw e; }
+    }
+    M.resolve.done={action:"approve", resolved_by:actor, accepted:res.accepted_numbers,
+      settled_utility:res.settled_utility, below_floor:res.below_floor, message:res.message};
+    M.resolve.savingsRecord = bookSavings(res.accepted_numbers, "human");
+    M.status="closed";
+  }catch(e){ M.resolve.error=e.message||"couldn't approve the offer"; }
+  finally{ M.resolve.busy=false; render(); }
+}
+
+// Compute + persist an EXACT savings record vs the entered annual-spend baseline. Never fakes a
+// number: no baseline → saved_eur=null (utility-only). Negative deltas (a price-raising renewal)
+// are kept as negative. Baseline price = the current/opening price the human set; settled price =
+// the supplier's OWN accepted figure. Saved to localStorage as the portfolio's running ledger.
+function bookSavings(accepted, closedBy){
+  const spend = parseFloat(M.resolve.annualSpend);
+  const basePrice = parseFloat(M.form.supplierOpen);  // the current/opening price = baseline
+  const settledPrice = accepted && accepted.price!=null ? +accepted.price : null;
+  let saved_eur=null, saving_pct=null;
+  if(isFinite(spend) && spend>0 && isFinite(basePrice) && basePrice>0 && settledPrice!=null){
+    saving_pct = (basePrice - settledPrice)/basePrice*100;   // may be negative
+    saved_eur = Math.round(spend * (basePrice - settledPrice)/basePrice);
+  }
+  const rec = {
+    project_id:M.session, date:new Date().toISOString().slice(0,10),
+    baseline:{current_price:isFinite(basePrice)?basePrice:null, annual_spend_eur:isFinite(spend)?spend:null},
+    settled_figures:accepted||{}, saved_eur, saving_pct,
+    method:"exact", volume_basis:"baseline", closed_by:closedBy, resolved_by:(M.resolve.actor||"").trim(),
+  };
+  saveSavingsRecord(rec);
+  return rec;
+}
+
+// The buyer-owned savings ledger lives ONLY in localStorage — EUR + supplier data never leave the
+// browser, never enter a prompt (per the GDPR minimisation rule). One record per closed project.
+const _SAVINGS_KEY = "peitho.savings.v1";
+function loadSavingsLedger(){
+  try{ return JSON.parse(localStorage.getItem(_SAVINGS_KEY)||"[]"); }catch(e){ return []; }
+}
+function saveSavingsRecord(rec){
+  try{
+    const led = loadSavingsLedger().filter(r=>r.project_id!==rec.project_id);
+    led.push(rec); localStorage.setItem(_SAVINGS_KEY, JSON.stringify(led));
+  }catch(e){ /* storage disabled/full — the record still shows for this close, just not persisted */ }
+}
+// Portfolio running total of exact € savings; null when nothing bookable yet (so we never show €0
+// as if it were a real result). Only exact-method records with a real € figure are summed.
+function portfolioSavedTotal(){
+  const led = loadSavingsLedger().filter(r=>r.method==="exact" && r.saved_eur!=null);
+  if(!led.length) return null;
+  return led.reduce((s,r)=>s+r.saved_eur, 0);
 }
 
 /* ══ negotiation loop ══════════════════════════════════════════════════════ */
@@ -1976,6 +2179,7 @@ async function start(){
   // here so a stale click never fires a doomed request. The reason is shown by mandateView via prob.
   if(mandateProblem()){ render(); return; }
   M.session = "s"+Math.random().toString(36).slice(2,10);
+  M.resolve={ busy:false, error:null, done:null, takeover:false, actor:M.resolve.actor||"", annualSpend:"", savingsRecord:null };
   M.transcript=[]; M.thread=[]; M.turns=[]; M.convergence=[];
   M.terminal=false; M.status="live"; M.error=null; M.tab="buyer"; M.busy=true;
   M.phase="running"; render();
