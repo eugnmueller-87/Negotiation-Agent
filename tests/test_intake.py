@@ -275,3 +275,22 @@ def test_new_patterns_stay_linear_on_pathological_input():
     t0 = time.perf_counter()
     extract_contract(payload)
     assert (time.perf_counter() - t0) < 1.0  # generous bound; real is ~0.2s
+
+
+# ── regressions from the adversarial red-team of the extraction patterns ──
+def test_supplier_label_does_not_grab_the_buyer_from_prose():
+    # "The Supplier shall provide services to Acme Buyer GmbH" must NOT capture the buyer — the
+    # label form now requires a real delimiter, so prose falls through (and finds nothing here)
+    ex = extract_contract("The Supplier shall provide services to Acme Buyer GmbH.")
+    assert ex.supplier_name is None
+
+
+def test_total_value_does_not_fire_on_a_per_unit_price():
+    # "total price per unit" is a per-unit price, not a contract value
+    ex = extract_contract("The total price per unit is EUR 12.00.")
+    assert all(t.name != "total_value" for t in ex.terms)
+
+
+def test_total_value_does_not_fire_on_a_liability_cap():
+    ex = extract_contract("Total liability shall not exceed EUR 50,000.")
+    assert all(t.name != "total_value" for t in ex.terms)

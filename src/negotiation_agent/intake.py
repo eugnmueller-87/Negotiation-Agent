@@ -113,12 +113,15 @@ _MONTHS_RE = re.compile(
 # "Total contract value: EUR 194,920" is a TOTAL/annual figure, not a per-unit price. Extracting
 # it as `price` (the per-unit lever) is wrong — it produces a nonsense per-unit target/floor. Pull
 # it as a distinct `total_value` term the caller can label honestly and NOT treat as per-unit.
+# Value nouns exclude "price/cost/amount" — those are the per-unit and liability-cap vectors
+# ("total price per unit", "total liability ... amount"). Currency is MANDATORY and the number
+# must not be followed by "per/each//" (a per-unit rate). Verified against the red-team's FPs.
 _TOTAL_VALUE_RE = re.compile(
     r"\b(?:total|aggregate|annual)\b[^.\n]{0,30}?"
-    r"\b(?:contract|subscription|order|deal)?\s*(?:value|fee|fees|price|amount|spend|cost)\b"
-    r"[^.\n]{0,20}?(?:€|eur|usd|\$)?\s*(" + _NUM + r")"
-    r"|(?:€|eur|usd|\$)\s*(" + _NUM + r")[^.\n]{0,20}?\b(?:total|in total|per annum|annually|"
-    r"for the (?:initial )?term)\b",
+    r"\b(?:contract|subscription|order|deal)?\s*(?:value|fees?|spend)\b"
+    r"[^.\n]{0,20}?(?:€|eur|usd|\$)\s*(" + _NUM + r")(?!\s*(?:per|each|/|pro)\b)"
+    r"|(?:€|eur|usd|\$)\s*(" + _NUM + r")(?!\s*(?:per|each|/|pro)\b)"
+    r"[^.\n]{0,20}?\b(?:total|in total|per annum|annually|for the (?:initial )?term)\b",
     re.I,
 )
 # the (?<![\d.,]) stops a match from starting mid-token, so "1.2.3 units" is rejected
@@ -141,8 +144,11 @@ _ENTITY = (
 #     usually the supplier/provider). We take the first entity after "between".
 #  3. "by <Entity> ('defined term')" / "<Entity> ('Provider')" — the provider defined-term form.
 _SUPPLIER_RES = (
+    # 1. A LABELLED field "Supplier: <Entity>". The delimiter (:/-/=) is REQUIRED and the entity
+    #    must start immediately after it — otherwise prose like "The Supplier shall provide services
+    #    to Acme Buyer GmbH" would grab the BUYER (the label word treated as running text).
     re.compile(
-        rf"(?:supplier|vendor|lieferant|seller|provider|licensor)\s*[:\-]?\s*({_ENTITY})", re.I
+        rf"(?:supplier|vendor|lieferant|seller|provider|licensor)\s*[:\-=]\s*({_ENTITY})", re.I
     ),
     re.compile(rf"\bentered into\b[^.\n]{{0,40}}?\bbetween\s+({_ENTITY})", re.I),
     re.compile(rf"\bby and between\s+({_ENTITY})", re.I),
