@@ -299,6 +299,68 @@ def test_per_unit_rate_still_excluded_from_total_value():
     assert all(t.name != "total_value" for t in ex.terms)
 
 
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        # a scale word after the figure multiplies it — ignoring it was a silent 1e6x corruption
+        ("The parties agree a total contract value of EUR 2.4 million.", 2_400_000.0),
+        ("Total contract value: EUR 1.5 million for the initial term.", 1_500_000.0),
+        ("Vertragswert: EUR 1,5 Mio. insgesamt.", 1_500_000.0),
+        ("Total contract value: EUR 250 thousand.", 250_000.0),
+    ],
+)
+def test_scale_word_multiplies_the_figure(text, expected):
+    ex = extract_contract(text)
+    assert next(t.value for t in ex.terms if t.name == "total_value") == expected
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # a cap/deposit/insurance figure is neither a price nor a contract value — never emitted
+        "Total liability shall not exceed EUR 50,000.",
+        "Supplier shall indemnify Customer; the maximum recoverable shall not exceed EUR 750,000.",
+        "Supplier shall maintain business interruption insurance with coverage of EUR 5,000,000.",
+        "The Customer shall pay a security deposit of EUR 50,000 upon signature.",
+    ],
+)
+def test_cap_deposit_insurance_is_neither_price_nor_total(text):
+    ex = extract_contract(text)
+    names = {t.name for t in ex.terms}
+    assert "price" not in names and "total_value" not in names
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # a real unit price must survive a cap/deposit/insurance figure appearing FIRST in the text
+        "Liquidated damages of EUR 50,000 shall apply. The unit price is EUR 12.50 per unit.",
+        "The Customer shall pay a security deposit of EUR 50,000. The unit price is EUR 12.50 per "
+        "unit.",
+        "Supplier shall maintain insurance with coverage of EUR 5,000,000. The unit price is EUR "
+        "12.50 per unit.",
+    ],
+)
+def test_real_price_survives_a_leading_cap_or_deposit(text):
+    ex = extract_contract(text)
+    assert next((t.value for t in ex.terms if t.name == "price"), None) == 12.5
+
+
+def test_machinery_unit_price_above_ceiling_stays_a_price():
+    # an explicit per-unit cue means a >10k figure IS a unit price (machinery), not a total
+    ex = extract_contract("The unit price is EUR 48,500 per unit for the CNC milling machine.")
+    by = {t.name: t.value for t in ex.terms}
+    assert by.get("price") == 48500.0 and "total_value" not in by
+
+
+def test_total_and_unit_price_both_extracted():
+    ex = extract_contract(
+        "Total contract value: EUR 194,920 for the initial term. Unit price EUR 12.50 per unit."
+    )
+    by = {t.name: t.value for t in ex.terms}
+    assert by.get("total_value") == 194920.0 and by.get("price") == 12.5
+
+
 def test_payment_within_parenthesized_days():
     assert _value("fees are due within thirty (30) days of invoice", "payment_days") == 30.0
 
