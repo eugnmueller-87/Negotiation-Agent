@@ -983,6 +983,7 @@ function readFileIntoIntel(file){
     }
     M.intel.text=text; M.intel.filename=file.name; M.intel.error=null; M.intel.result=null; M.intel.accepted={};
     render();
+    readContract();  // extract the deal immediately so the form fills from the upload
   };
   reader.readAsText(file);
 }
@@ -996,9 +997,14 @@ async function extractFileServerSide(file){
     const r=await fetch(API+"/extract-text", {method:"POST", headers:authHeaders(), body:fd});
     const data=await r.json().catch(()=>({error:{code:"bad_response",message:"unreadable response"}}));
     if(!r.ok) throw new Error(data?.error?.message||"couldn't read the file");
-    M.intel.text=data.text||""; M.intel.filename=file.name; M.intel.accepted={};
+    M.intel.text=data.text||""; M.intel.filename=file.name; M.intel.accepted={}; M.intel.result=null;
     // surface a truncation warning honestly — a >2 MB-text read is never reported as complete
     M.intel.error = data.truncated ? `⚠ ${data.warning||"the document was truncated for analysis"}` : null;
+    M.intel.busy=false;
+    // extract the deal immediately so the supplier/category/price fill in from the UPLOAD —
+    // the user shouldn't have to also click "Read the contract" to replace the sample.
+    await readContract();
+    return;
   }catch(e){ M.intel.error=e.message||`couldn't read ${file.name}`; }
   finally{ M.intel.busy=false; render(); }
 }
@@ -1024,8 +1030,10 @@ async function readContract(){
 function fillFormFromExtraction(r){
   const i=r&&r.intelligence; const ext=i&&i.extraction; if(!ext) return;
   const terms=Object.fromEntries((ext.terms||[]).map(t=>[t.name,t.value]));
-  if(ext.supplier_name && !M.touched.has("supplier")) M.form.supplier=ext.supplier_name;
-  if(ext.category && !M.touched.has("category")) M.form.category=ext.category;
+  // Fill from the contract. If extraction found NO supplier, clear the sample rather than leave a
+  // misleading "Nordwerk" — an empty field honestly says "not detected, type it in" (never guessed).
+  if(!M.touched.has("supplier")) M.form.supplier = ext.supplier_name || "";
+  if(!M.touched.has("category") && ext.category) M.form.category=ext.category;
   if(terms.price!=null){
     if(!M.touched.has("supplierOpen")) M.form.supplierOpen=+terms.price;
     if(!M.touched.has("target")) M.form.target=+terms.price;
