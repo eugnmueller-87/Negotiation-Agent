@@ -184,11 +184,19 @@ class GuardAttempt(BaseModel):
 
 
 class GuardAudit(BaseModel):
-    """The record of the draft→guard→redraft loop for one buyer message."""
+    """The record of the draft→guard→redraft loop for one buyer message.
+
+    ``released_by`` names who authored the released text: the LLM (``model``), the
+    deterministic template (``fallback``), or a named human (``human`` — a human
+    playing buyer, or a human resolving an escalation). ``resolved_by`` carries that
+    human's actor label on a human-authored close, so the audit trail never lies
+    about who wrote what.
+    """
 
     model_config = {"frozen": True}
 
-    released_by: Literal["model", "fallback"]
+    released_by: Literal["model", "fallback", "human"]
+    resolved_by: str = ""  # actor label when released_by == "human"; empty otherwise
     attempts: list[GuardAttempt] = Field(default_factory=list)
 
     @property
@@ -271,6 +279,56 @@ class OpenResponse(BaseModel):
     signed_mandate: SignedMandate
     turn: TurnResult
     supplier_brief: SupplierBrief | None = None
+
+
+# ---- Human resolution of a terminal (escalated / deadline) negotiation --------
+
+
+class ResolveRequest(BaseModel):
+    """A human closing out a negotiation the engine handed off (ESCALATE or deadline).
+
+    ``approve`` accepts the supplier's LAST stated offer as-is — the deal closes at the
+    figures the supplier themselves stated (re-extracted raw from their message, never
+    the engine's clamped view). ``takeover`` flips the project to human-led: the engine
+    stops deciding and the human composes freely under their own mandate authority.
+
+    ``override_below_floor`` is required when the supplier's raw offer scores below the
+    mandate's reservation floor: the ENGINE never concedes past reservation, so a
+    below-floor close is an explicit, named-human act. ``resolved_by`` records who.
+    """
+
+    model_config = {"frozen": True}
+
+    signed_mandate: SignedMandate
+    transcript: Transcript = Field(default_factory=Transcript)
+    session_id: str = Field(min_length=1)
+    action: Literal["approve", "takeover"]
+    resolved_by: str = Field(min_length=1, max_length=_MAX_LABEL_CHARS)
+    override_below_floor: bool = False
+    correspondents: Correspondents = Field(default_factory=Correspondents)
+    context: NegotiationContext = Field(default_factory=NegotiationContext)
+
+
+class ResolveResponse(BaseModel):
+    """The result of a human resolution.
+
+    ``approve``: ``accepted_numbers`` are the supplier's own raw stated figures (the
+    settlement), ``message`` a templated acceptance letter that passes the guard against
+    exactly those figures, ``settled_utility`` where the deal landed on the buyer's scale
+    (may be below reservation — then ``below_floor`` is true and the override was required).
+    ``takeover``: ``message`` is empty and the UI takes over composition; ``below_floor``
+    reflects the last offer for context.
+    """
+
+    model_config = {"frozen": True}
+
+    action: Literal["approve", "takeover"]
+    resolved_by: str
+    accepted_numbers: dict[str, float] = Field(default_factory=dict)
+    message: str = ""
+    settled_utility: float | None = None
+    below_floor: bool = False
+    guard: GuardAudit | None = None
 
 
 class ApiError(BaseModel):

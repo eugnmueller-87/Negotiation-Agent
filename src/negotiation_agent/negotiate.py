@@ -241,6 +241,48 @@ def resolve_supplier_offer(
     return Offer(terms=clamped)
 
 
+def raw_offer_from_text(
+    envelope: Envelope, raw_text: str, prev_raw: Offer | None
+) -> Offer | None:
+    """The supplier's offer as they LITERALLY stated it — no envelope clamping.
+
+    ``resolve_supplier_offer`` clamps a below-worst figure to the envelope's worst end so the
+    engine's fold can't leave the envelope. That clamped value is right for SCORING but wrong for
+    a HUMAN ACCEPTANCE: if the supplier said "€250" and the buyer's worst is €260, clamping would
+    make the acceptance letter and the savings math claim €260 — a figure the supplier never
+    stated. When a human approves the supplier's offer, we must close on THEIR number, so this
+    helper returns the raw parsed figures, inheriting unmentioned terms from the prior raw offer.
+    Only envelope terms are kept (unknown terms aren't part of the deal); ``None`` when nothing
+    parses and there's no standing offer.
+    """
+    extraction = extract_contract(raw_text)
+    found = {t.name: t.value for t in extraction.terms if t.name in envelope.term_map}
+    if not found and prev_raw is None:
+        return None
+    base = dict(prev_raw.terms) if prev_raw else {}
+    base.update(found)
+    # keep only the terms the envelope actually negotiates, but do NOT clamp — these are the
+    # supplier's own stated values, the settlement figures a human close commits to.
+    terms = {n: base[n] for n in envelope.term_map if n in base}
+    if set(terms) != set(envelope.term_map):
+        return None
+    return Offer(terms=terms)
+
+
+def raw_offers_from_transcript(turns: list[SupplierTurn], envelope: Envelope) -> list[Offer]:
+    """Every supplier offer as literally stated (un-clamped), oldest→newest — the acceptance/
+    savings view. Mirrors ``offers_from_transcript`` but via ``raw_offer_from_text``."""
+    offers: list[Offer] = []
+    prev: Offer | None = None
+    for turn in turns:
+        offer = raw_offer_from_text(envelope, turn.raw_text, prev)
+        if offer is None:
+            continue
+        offers.append(offer)
+        prev = offer
+    return offers
+
+
 def turn_result(
     decision: EngineDecision,
     envelope: Envelope,

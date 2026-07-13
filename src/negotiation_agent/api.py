@@ -48,6 +48,7 @@ from negotiation_agent.negotiate import (
     draft_and_guard,
     fold,
     offers_from_transcript,
+    raw_offers_from_transcript,
     resolve_supplier_offer,
     turn_result,
 )
@@ -59,6 +60,8 @@ from negotiation_agent.wire import (
     GuardAudit,
     OpenRequest,
     OpenResponse,
+    ResolveRequest,
+    ResolveResponse,
     StepRequest,
     StepResponse,
     TranscriptView,
@@ -776,7 +779,9 @@ def negotiate_step(req: StepRequest, request: Request) -> JSONResponse:
                 422,
             )
         message = req.buyer_input.raw_text
-        audit = GuardAudit(released_by="model", attempts=[])
+        # A human wrote this text, not the model — the audit trail must say so (was mislabeled
+        # "model", which lied about authorship). resolved_by is unavailable on the step path.
+        audit = GuardAudit(released_by="human", attempts=[])
     elif decision.outcome is Outcome.COUNTER or decision.outcome is Outcome.ACCEPT:
         brief = build_move_brief(
             decision, envelope, prev_counter, engine.config.max_rounds, priorities=engine.priorities
@@ -820,6 +825,136 @@ def negotiate_step(req: StepRequest, request: Request) -> JSONResponse:
         supplier_view=_supplier_view(req, message, supplier_text),
         turn=turn,
         terminal=terminal,
+    )
+    return JSONResponse(content=resp.model_dump(mode="json"))
+
+
+@app.post("/negotiate/resolve", response_model=None)
+def negotiate_resolve(req: ResolveRequest, request: Request) -> JSONResponse:
+    """Human resolution of a negotiation the engine handed off (ESCALATE / deadline).
+
+    Two actions, both $0 (templated, no LLM in any mode):
+
+    - ``approve``: close the deal at the supplier's LAST stated offer. The settlement figures are
+      the supplier's OWN raw numbers (re-extracted un-clamped from their message), NOT the engine's
+      clamped fold view — accepting must never claim a figure the supplier didn't state. The
+      acceptance letter is templated from exactly those figures and passes the guard against them.
+      If the raw offer scores below the mandate's reservation floor, ``override_below_floor`` + a
+      named actor are REQUIRED: the engine never concedes past reservation, so a below-floor close
+      is an explicit, named-human act (released_by="human", resolved_by recorded).
+
+    - ``takeover``: hand composition to the human; the engine stops deciding. Returns the
+      acceptance-free handover; the UI takes over. Recorded as a human act.
+
+    Never writes to the OutcomeStore (a below-floor / human close would poison the PII-free priors —
+    only engine ACCEPT closes feed learning).
+    """
+    gate = _rate_gate(request, "resolve", limit=_RATE_PER_MIN)
+    if gate is not None:
+        return gate
+    now = time.time()
+
+    try:
+        secret = _secret()
+    except MandateError as e:
+        return _err("misconfigured", str(e), 500)
+
+    try:
+        mandate = verify_mandate(req.signed_mandate, secret, int(now))
+    except MandateError as e:
+        code = "mandate_expired" if "expired" in str(e) else "mandate_tampered"
+        return _err(
+            code, "the mandate could not be verified", 400 if code == "mandate_tampered" else 410
+        )
+
+    try:
+        engine, envelope = build_engine(mandate)
+    except (ValueError, KeyError) as e:
+        return _err("bad_mandate", f"mandate is invalid: {e}", 400)
+
+    if len(req.transcript.turns) > engine.config.max_rounds:
+        return _err("transcript_too_long", "transcript exceeds the mandate's round budget", 400)
+
+    # The transcript must be TERMINAL to resolve — you only hand off a negotiation the engine
+    # closed (escalate or deadline-accept). Fold it and assert the last decision is not a live
+    # COUNTER. (fold() returns normally on an escalate-terminated transcript; we do NOT catch
+    # NegotiationClosed here — that's the "step past a closed deal" error, a different thing.)
+    clamped_offers = offers_from_transcript(req.transcript.turns, envelope)
+    if not clamped_offers:
+        return _err("no_offer_to_resolve", "no supplier offer to resolve", 422)
+    try:
+        decision, _, _ = fold(engine, clamped_offers)
+    except NegotiationClosed:
+        return _err("negotiation_closed", "this negotiation has already ended", 409)
+    if decision.outcome is Outcome.COUNTER:
+        return _err(
+            "not_terminal",
+            "this negotiation is still live — step it or let it escalate before resolving",
+            409,
+        )
+
+    category, register = _detect_context(
+        req.context, [t.raw_text for t in req.transcript.turns]
+    )
+    corr = _correspondents_dict(req.correspondents, register)
+
+    if req.action == "takeover":
+        # Hand composition to the human — the engine is out. No acceptance figures; the UI's
+        # free-compose mode keeps the mechanism-leak screen on but suspends the numeric allowlist.
+        audit = GuardAudit(released_by="human", resolved_by=req.resolved_by, attempts=[])
+        resp = ResolveResponse(
+            action="takeover",
+            resolved_by=req.resolved_by,
+            message="",
+            guard=audit,
+        )
+        return JSONResponse(content=resp.model_dump(mode="json"))
+
+    # approve: close at the supplier's OWN raw stated offer (never the clamped fold view).
+    raw_offers = raw_offers_from_transcript(req.transcript.turns, envelope)
+    if not raw_offers:
+        return _err("no_offer_to_resolve", "couldn't read the supplier's final offer", 422)
+    settled = raw_offers[-1]
+    accepted = {n: settled.terms[n] for n in envelope.term_map if n in settled.terms}
+
+    try:
+        settled_utility = round(envelope.utility(settled), 4)
+    except (KeyError, ValueError):
+        settled_utility = None
+    below_floor = settled_utility is not None and settled_utility < envelope.reservation_utility
+
+    # Below the floor, the ENGINE would never close — only a named human, explicitly. Require it.
+    if below_floor and not req.override_below_floor:
+        return _err(
+            "below_floor",
+            "the supplier's offer is below your reservation floor; approving it requires an "
+            "explicit override + your name (the engine never concedes past the floor)",
+            409,
+        )
+
+    # Templated acceptance from EXACTLY the accepted figures, wrapped as a letter. Because the prose
+    # states only the supplier's own accepted numbers, the guard against that allowlist is clean.
+    from negotiation_agent.fallback import _ACCEPT_TEMPLATES, _format_figures, wrap_letter
+
+    body = _ACCEPT_TEMPLATES[0].format(figures=_format_figures(accepted))
+    message = wrap_letter(body, corr)
+
+    from negotiation_agent.guard import check
+
+    violations = check(message, accepted)
+    if violations:  # a defensive belt-and-suspenders; the templated body can't normally violate
+        logger.error("resolve acceptance failed its own guard: %s", violations)
+        return _err("acceptance_guard_failed", "could not draft a clean acceptance", 500)
+
+    audit = GuardAudit(released_by="human", resolved_by=req.resolved_by, attempts=[])
+    resp = ResolveResponse(
+        action="approve",
+        resolved_by=req.resolved_by,
+        accepted_numbers=accepted,
+        message=message,
+        settled_utility=settled_utility,
+        below_floor=below_floor,
+        guard=audit,
     )
     return JSONResponse(content=resp.model_dump(mode="json"))
 
