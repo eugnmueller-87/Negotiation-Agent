@@ -137,6 +137,29 @@ _RESEARCH_RATE_PER_MIN = int(os.getenv("PEITHO_RESEARCH_RATE_PER_MIN", "4"))
 _SCAN_RATE_PER_MIN = int(os.getenv("PEITHO_SCAN_RATE_PER_MIN", "2"))
 _rate_hits: dict[str, list[float]] = {}
 
+# Phase 4 — a HARD ceiling on paid LLM buyer-drafts across a rolling window, process-wide. IP rate
+# limits bound requests/min per client; this bounds TOTAL paid drafts so a full-mode batch (many
+# projects negotiating at once) can't run token cost away. When the ceiling is hit, _drafter_for
+# FAILS CLOSED to the deterministic templated drafter ($0) — it degrades, never errors, so the
+# negotiation still completes with a guard-clean message. 0 disables the cap (unbounded).
+_DRAFT_BUDGET = int(os.getenv("PEITHO_DRAFT_BUDGET", "120"))
+_DRAFT_BUDGET_WINDOW = int(os.getenv("PEITHO_DRAFT_BUDGET_WINDOW", "3600"))
+_draft_hits: list[float] = []
+
+
+def _draft_budget_ok() -> bool:
+    """True if a paid draft is still within the rolling budget; records the draft when it is.
+    Fails CLOSED (returns False) once the ceiling is hit, so the caller degrades to templated."""
+    if _DRAFT_BUDGET <= 0:
+        return True  # cap disabled
+    now = time.time()
+    cutoff = now - _DRAFT_BUDGET_WINDOW
+    _draft_hits[:] = [t for t in _draft_hits if t > cutoff]
+    if len(_draft_hits) >= _DRAFT_BUDGET:
+        return False
+    _draft_hits.append(now)
+    return True
+
 
 def _drafter() -> DraftClient:
     """Construct the server-side drafter. Overridden in tests via dependency injection."""
@@ -174,12 +197,24 @@ def _full_mode(request: Request) -> bool:
 
 
 def _drafter_for(request: Request) -> DraftClient:
-    """The drafter for this request: the real (paid) client in full mode, else the deterministic
-    templated drafter that makes no network call. This is the single seam that decides whether a
-    request can spend on the buyer message."""
+    """The drafter for this request: the real (paid) client in full mode AND within the draft
+    budget, else the deterministic templated drafter that makes no network call. This is the single
+    seam that decides whether a request can spend on the buyer message. When the rolling draft
+    budget is exhausted it FAILS CLOSED to the templated drafter — the negotiation still completes
+    at $0, it just stops spending (a loud server-side log marks the degradation, never a silent
+    forever-fallback that would hide a retired model)."""
     from negotiation_agent.fallback import DeterministicDrafter
 
-    return draft_client_factory() if _full_mode(request) else DeterministicDrafter()
+    if not _full_mode(request):
+        return DeterministicDrafter()
+    if not _draft_budget_ok():
+        logger.warning(
+            "draft budget exhausted (%d/%ds) — degrading to the templated drafter to cap spend",
+            _DRAFT_BUDGET,
+            _DRAFT_BUDGET_WINDOW,
+        )
+        return DeterministicDrafter()
+    return draft_client_factory()
 
 
 def _secret() -> str:

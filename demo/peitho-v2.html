@@ -608,6 +608,7 @@
   .batch-tbl tr:last-child td{border-bottom:none;}
   .batch-tbl .neg{color:var(--crit);}
   .batch-note{font-size:11px;color:var(--ink-3);margin-top:10px;line-height:1.5;}
+  .batch-real{font-size:11.5px;color:var(--ink-2);margin-top:12px;padding:9px 12px;border-radius:8px;background:var(--surface-2);line-height:1.5;}
 </style>
 </head>
 <body>
@@ -1499,6 +1500,7 @@ function batchPanel(){
       <button class="btn ghost" id="batchSample">Load an example</button>
     </div>
     ${b.result?batchResult(b.result):""}
+    <div class="batch-real">Against <b>real</b> suppliers: the agent drafts every message and holds the floor, but <b>you send and paste back the replies</b> — Peitho has no email channel (by design; a real send/receive integration is a separate step). This batch runs a simulated counterparty so you can see the whole portfolio negotiate at once, $0.</div>
   </div>`;
 }
 
