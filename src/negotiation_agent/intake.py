@@ -114,14 +114,27 @@ _MONTHS_RE = re.compile(
 # it as `price` (the per-unit lever) is wrong — it produces a nonsense per-unit target/floor. Pull
 # it as a distinct `total_value` term the caller can label honestly and NOT treat as per-unit.
 # Value nouns exclude "price/cost/amount" — those are the per-unit and liability-cap vectors
-# ("total price per unit", "total liability ... amount"). Currency is MANDATORY and the number
-# must not be followed by "per/each//" (a per-unit rate). Verified against the red-team's FPs.
+# ("total price per unit", "total liability ... amount"). Currency is MANDATORY.
+#
+# Two guards on EACH captured number, in this order:
+#  1. (?![\d.,]?\d) — a TOKEN-BOUNDARY guard. Without it, when the per-unit lookahead below
+#     rejects a full figure ("400,000 per annum"), the engine BACKTRACKS _NUM digit by digit
+#     until it finds a shorter capture the lookahead accepts ("400,00" followed by "0") —
+#     silently reading EUR 400,000 as 400.00 (a 1000x corruption whose quote contradicted its
+#     value). The guard forbids ending a capture right before a digit (or separator+digit), so
+#     the alternative fails cleanly instead of truncating. (Fable-5 red-team, verified 2026-07-13.)
+#  2. the per-UNIT-rate ban ("EUR 12 per unit" is a unit price, not a total). "per annum"/"per
+#     year" are EXEMPTED (an annual total IS a total); "per unit"/"per piece" stay rejected.
+_PER_UNIT_BAN = r"(?!\s*(?:per(?!\s+(?:annum|year)\b)|each|/|pro)\b)"
+_NUM_END = r"(?![\d.,]?\d)"
+# The captured number, then the token-boundary guard, then the per-unit-rate ban (see above).
+_TOTAL_NUM = "(" + _NUM + ")" + _NUM_END + _PER_UNIT_BAN
 _TOTAL_VALUE_RE = re.compile(
     r"\b(?:total|aggregate|annual)\b[^.\n]{0,30}?"
     r"\b(?:contract|subscription|order|deal)?\s*(?:value|fees?|spend)\b"
-    r"[^.\n]{0,20}?(?:€|eur|usd|\$)\s*(" + _NUM + r")(?!\s*(?:per|each|/|pro)\b)"
-    r"|(?:€|eur|usd|\$)\s*(" + _NUM + r")(?!\s*(?:per|each|/|pro)\b)"
-    r"[^.\n]{0,20}?\b(?:total|in total|per annum|annually|for the (?:initial )?term)\b",
+    r"[^.\n]{0,20}?(?:€|eur|usd|\$)\s*" + _TOTAL_NUM
+    + r"|(?:€|eur|usd|\$)\s*" + _TOTAL_NUM
+    + r"[^.\n]{0,20}?\b(?:total|in total|per annum|per year|annually|for the (?:initial )?term)\b",
     re.I,
 )
 # A liability/penalty/indemnity CAP figure ("total liability shall not exceed EUR 50,000") is

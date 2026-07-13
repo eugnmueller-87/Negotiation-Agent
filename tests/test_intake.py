@@ -276,6 +276,29 @@ def test_real_per_unit_price_and_total_both_kept():
     assert by.get("price") == 12.0 and by.get("total_value") == 500000.0
 
 
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        # "per annum" made _TOTAL_VALUE_RE's per-unit lookahead reject the full figure, forcing the
+        # engine to BACKTRACK the number to a shorter capture the lookahead accepted — reading
+        # EUR 400,000 as 400.00 (a silent 1000x corruption whose quote contradicted its value).
+        ("The subscription fee shall be EUR 400,000 per annum.", 400000.0),
+        ("Total subscription fees: EUR 96,000 per annum.", 96000.0),
+        ("The annual fee is EUR 250,000 per year.", 250000.0),
+    ],
+)
+def test_annual_total_is_never_truncated_by_per_unit_lookahead(text, expected):
+    ex = extract_contract(text)
+    tv = next((t.value for t in ex.terms if t.name == "total_value"), None)
+    assert tv == expected  # the full figure, not a backtracked truncation
+
+
+def test_per_unit_rate_still_excluded_from_total_value():
+    # the per-annum exemption must NOT let a genuine per-UNIT rate become a total
+    ex = extract_contract("Total price: EUR 12.50 per unit.")
+    assert all(t.name != "total_value" for t in ex.terms)
+
+
 def test_payment_within_parenthesized_days():
     assert _value("fees are due within thirty (30) days of invoice", "payment_days") == 30.0
 
