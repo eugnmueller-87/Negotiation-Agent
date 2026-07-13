@@ -149,6 +149,26 @@
   .es-flag{padding:8px 14px;font-size:12px;color:var(--ink-2);border-top:1px solid var(--line);display:flex;gap:8px;flex-wrap:wrap;}
   .es-chip{font-size:11.5px;padding:1px 8px;border-radius:999px;background:var(--surface);border:1px solid var(--line);}
   .ta-lbl{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin:0 0 6px;}
+  /* key points — the important bits as bullets, replacing the raw-text dump */
+  .keypts{margin:2px 0 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface);overflow:hidden;}
+  .keypts-hd{display:flex;align-items:center;gap:8px;padding:9px 14px;border-bottom:1px solid var(--line);
+    background:var(--surface-2);font-size:12px;font-weight:600;color:var(--ink-2);}
+  .keypts-hd svg{color:var(--buyer);flex:none;}
+  .keypts ul{list-style:none;margin:0;padding:8px 14px 10px;display:flex;flex-direction:column;gap:0;}
+  .keypts li{display:grid;grid-template-columns:118px 1fr;gap:12px;align-items:baseline;padding:6px 0;
+    border-bottom:1px solid var(--line);font-size:13px;line-height:1.45;}
+  .keypts li:last-child{border-bottom:none;}
+  .keypts .kp-k{font-family:var(--mono);font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-3);}
+  .keypts .kp-v{color:var(--ink);} .keypts .kp-v b{font-weight:600;} .keypts .kp-v .unk{color:var(--ink-3);}
+  .keypts .kp-flag{color:var(--warn);font-weight:600;}
+  .keypts-none{padding:12px 14px;font-size:12.5px;color:var(--ink-3);}
+  .rawtext{margin:2px 0 12px;}
+  .rawtext > summary{cursor:pointer;font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--ink-3);padding:6px 2px;list-style:none;user-select:none;}
+  .rawtext > summary::-webkit-details-marker{display:none;}
+  .rawtext > summary:hover{color:var(--ink-2);}
+  .rawtext > summary::before{content:"▸ ";color:var(--buyer);}
+  .rawtext[open] > summary::before{content:"▾ ";}
   .intel-drop{margin-bottom:10px;border:1.5px dashed var(--line);border-radius:10px;background:var(--surface-2);
     padding:14px 16px;display:flex;align-items:center;gap:11px;cursor:pointer;transition:border-color .15s,background .15s;}
   .intel-drop:hover,.intel-drop.over{border-color:var(--buyer);background:var(--surface);}
@@ -792,9 +812,11 @@ Category: Corrugated packaging
         : `<span class="dz-main">Drop a contract file here, or click to choose</span><span class="dz-sub">PDF · Word .docx · .txt · .md · .csv — scanned/image PDFs have no text to read</span>`}</div>
       <input type="file" id="intelFile" accept=".pdf,.docx,.txt,.md,.markdown,.csv,.text,application/pdf,text/plain" hidden>
     </label>
-    ${it.result?intelEssence(it.result):""}
-    ${it.result?`<div class="ta-lbl">contract text — the agent read all of this</div>`:""}
-    <textarea class="intel-ta" id="intelText" placeholder="…or paste contract text here">${esc(it.text)}</textarea>
+    ${it.result
+      ? `${intelKeyPoints(it.result)}
+         <details class="rawtext"><summary>show full contract text</summary>
+           <textarea class="intel-ta" id="intelText">${esc(it.text)}</textarea></details>`
+      : `<textarea class="intel-ta" id="intelText" placeholder="…or paste contract text here">${esc(it.text)}</textarea>`}
     <div class="intel-row">
       <button class="btn primary" id="intelReadBtn" ${it.busy?"disabled":""}>${it.busy?'<span class="spin"></span> Reading…':'📄 Read the contract'}</button>
       <button class="btn ghost" id="intelSampleBtn">load a sample</button>
@@ -807,34 +829,41 @@ Category: Corrugated packaging
   </div>`;
 }
 
-// The commercial essence of the contract, at a glance — supplier + the numbers that drive the
-// mandate, shown ABOVE the raw text so a buyer reads the deal instantly, not by scrolling clauses.
-function intelEssence(r){
+// The important parts of the contract as BULLETS — replaces the raw-text dump. Deterministic:
+// every point is a fact the extractor pulled, so it works free (no LLM). The full text is still
+// available behind a "show full text" toggle for anyone who wants to verify.
+function intelKeyPoints(r){
   const i=r.intelligence, ext=i.extraction, life=i.lifecycle||{}, legal=i.legal||{};
   const terms=Object.fromEntries((ext.terms||[]).map(t=>[t.name,t.value]));
-  const cell=(v)=> v!=null ? `<span class="esv">${esc(String(v))}</span>` : `<span class="esv"><span class="unk">not detected</span></span>`;
-  const cells = [
-    // show a per-unit price when found; otherwise the total contract value, labelled honestly
-    terms.price!=null ? ["Unit price", eur(terms.price)]
-      : ["Total value", terms.total_value!=null?eur(terms.total_value):null],
-    ["Payment", terms.payment_days!=null?`net-${terms.payment_days}`:null],
-    ["Volume", terms.volume_units!=null?`${int(terms.volume_units)} u`:null],
-    ["Term", terms.contract_months!=null?`${Math.round(terms.contract_months)} mo`:null],
-    ["Expiry", life.expiration_date&&life.expiration_date.value!=null?esc(String(life.expiration_date.value)):null],
-  ];
-  const chips=[];
-  if(legal.has_nda&&legal.has_nda.value==="true") chips.push("NDA in place");
-  if(legal.has_dpa&&legal.has_dpa.value==="true") chips.push("DPA in place");
-  if(life.auto_renews&&life.auto_renews.value==="true") chips.push("⚠ auto-renews");
-  if(ext.category) chips.push(esc(ext.category));
-  const supplier = ext.supplier_name ? `<span class="es-sup">${esc(ext.supplier_name)}</span>` : `<span class="unk">supplier not detected</span>`;
-  return `<div class="essence">
-    <div class="essence-hd"><svg width="15" height="15"><use href="#i-seal"/></svg>
-      <b>Negotiating with ${supplier}</b></div>
-    <div class="essence-grid">
-      ${cells.map(([k,v])=>`<div class="es"><span class="esk">${k}</span>${cell(v)}</div>`).join("")}
-    </div>
-    ${chips.length?`<div class="es-flag">${chips.map(c=>`<span class="es-chip">${c}</span>`).join("")}</div>`:""}
+  const pts=[];
+  const add=(k,v)=> pts.push(`<li><span class="kp-k">${k}</span><span class="kp-v">${v}</span></li>`);
+
+  if(ext.supplier_name) add("Counterparty", `<b>${esc(ext.supplier_name)}</b>`);
+  if(ext.category) add("Category", esc(ext.category));
+  if(terms.price!=null) add("Unit price", `<b>${eur(terms.price)}</b> per unit`);
+  else if(terms.total_value!=null) add("Total value", `<b>${eur(terms.total_value)}</b> — total/annual, not per-unit`);
+  if(terms.payment_days!=null) add("Payment", `net-${Math.round(terms.payment_days)} days`);
+  if(terms.volume_units!=null) add("Volume", `${int(terms.volume_units)} units`);
+  if(terms.contract_months!=null) add("Term", `${Math.round(terms.contract_months)} months`);
+  if(terms.rebate_pct!=null) add("Rebate", `${num(terms.rebate_pct,1)}%`);
+  const exp=life.expiration_date&&life.expiration_date.value;
+  if(exp) add("Expiry", esc(String(exp)));
+  // legal flags — only surface the ones that MATTER (present protections + risk flags)
+  if(legal.has_nda&&legal.has_nda.value==="true") add("NDA", "in place ✓");
+  if(legal.has_dpa){ add("DPA", legal.has_dpa.value==="true"?"in place ✓":`<span class="kp-flag">not in place ⚠</span>`); }
+  if(life.auto_renews&&life.auto_renews.value==="true") add("Renewal", `<span class="kp-flag">auto-renews ⚠</span>`);
+
+  // extraction warnings (total-vs-unit, truncation, nothing found) — surfaced honestly
+  const warns=(i.warnings||[]);
+  const warnItems = warns.map(w=>`<li><span class="kp-k">Note</span><span class="kp-v kp-flag">⚠ ${esc(w)}</span></li>`).join("");
+
+  const body = pts.length
+    ? `<ul>${pts.join("")}${warnItems}</ul>`
+    : `<div class="keypts-none">No structured terms were recognised. Check the full text below, or type the key numbers into the mandate form.</div>`;
+  const who = ext.supplier_name ? ` · ${esc(ext.supplier_name)}` : "";
+  return `<div class="keypts">
+    <div class="keypts-hd"><svg width="14" height="14"><use href="#i-seal"/></svg> Key points${who}</div>
+    ${body}
   </div>`;
 }
 
