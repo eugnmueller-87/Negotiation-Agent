@@ -33,7 +33,12 @@ from pydantic import BaseModel, Field
 
 from negotiation_agent.envelope import Envelope, Offer
 from negotiation_agent.packages import InfeasiblePackage, fill_package
+from negotiation_agent.strategy import adapt_threshold, choose_tactic
 from negotiation_agent.supplier_model import SupplierModel
+
+_OPENING_RATIONALE = (
+    "Opening with a logrolled package at target — establish the reference point."
+)
 
 
 class Outcome(enum.StrEnum):
@@ -49,6 +54,10 @@ class EngineConfig(BaseModel):
     beta: float = Field(default=4.0, ge=1.0, description="Boulware exponent; >1 concedes late")
     stall_rounds: int = Field(default=3, ge=1, description="identical supplier offers -> escalate")
     on_unknown_terms: Literal["escalate", "ignore"] = "escalate"
+    # Opt-in "senior negotiator" layer: re-infer the supplier's priorities from their observed moves
+    # and adapt the concession PACE to their behaviour. Default OFF preserves the fixed-schedule
+    # engine exactly. The adaptation is strictly bounded and can never cross the reservation floor.
+    adaptive: bool = False
 
 
 class NegotiationState(BaseModel):
@@ -68,6 +77,9 @@ class NegotiationState(BaseModel):
     # Per-term ceiling on offered v, ratcheted down each round so concessions
     # never retract even if the belief is updated mid-negotiation (v1).
     concession_caps: dict[str, float] = Field(default_factory=dict)
+    # The supplier's offers in order (adaptive mode only). Threaded through the fold so opponent
+    # modelling reads the full move history without breaking decide's pure (state, incoming) shape.
+    supplier_history: list[Offer] = Field(default_factory=list)
 
 
 class EngineDecision(BaseModel):
@@ -81,6 +93,11 @@ class EngineDecision(BaseModel):
     counter_utility: float | None = None
     approved_numbers: dict[str, float] = Field(default_factory=dict)
     reason: str = ""
+    # Adaptive-mode audit trail: the tactic the engine played and why, and the base (pre-adaptation)
+    # threshold so a reviewer sees exactly how far the pace was nudged. Empty in non-adaptive mode.
+    tactic: str = ""
+    tactic_rationale: str = ""
+    base_threshold: float | None = None
 
 
 class DealEngine:
@@ -124,13 +141,66 @@ class DealEngine:
 
         ``incoming=None`` is the opening anchor. Pure: the same
         ``(state, incoming)`` always yields the same result.
+
+        In adaptive mode the supplier's priorities are re-inferred from their move history and the
+        concession pace is nudged to their behaviour — but the adaptation is strictly bounded to the
+        mandate band and the fixed-schedule engine is recovered exactly when ``adaptive=False``.
         """
+        base_theta = self.threshold(state.round_index)
+        theta, priorities, recip = self._effective_schedule(state, incoming, base_theta)
+
+        decision, nxt = self._decide_core(state, incoming, theta, priorities)
+
+        # append the supplier's offer to the history (adaptive opponent modelling reads it next
+        # turn)
+        if self.config.adaptive and incoming is not None:
+            nxt = nxt.model_copy(
+                update={"supplier_history": [*state.supplier_history, incoming]}
+            )
+        # attach the strategy read (tactic + rationale + base threshold) for the human audit trail
+        if self.config.adaptive:
+            decision = self._annotate(decision, base_theta, recip, incoming, nxt.supplier_history)
+        return decision, nxt
+
+    def _effective_schedule(
+        self, state: NegotiationState, incoming: Offer | None, base_theta: float
+    ) -> tuple[float, dict[str, float], float]:
+        """The (theta, priorities, reciprocity) this decision uses. In non-adaptive mode it is the
+        fixed base. In adaptive mode, priorities are re-inferred from the supplier's move history
+        and theta is nudged by reciprocity — always clamped to [reservation, target] by
+        adapt_threshold, so the floor cannot be crossed."""
+        if not self.config.adaptive or incoming is None:
+            return base_theta, self._priorities, 0.0
+        history = [*state.supplier_history, incoming]
+        if len(history) < 2:
+            return base_theta, self._priorities, 0.0
+        from negotiation_agent.opponent_model import infer_appetite, reciprocity
+
+        priorities = infer_appetite(self.envelope, history).priorities(self.envelope)
+        recip = reciprocity(self.envelope, history)
+        theta = adapt_threshold(
+            base_theta,
+            reciprocity=recip,
+            reservation=self.envelope.reservation_utility,
+            target=self.envelope.target_utility,
+        )
+        return theta, priorities, recip
+
+    def _decide_core(
+        self,
+        state: NegotiationState,
+        incoming: Offer | None,
+        theta: float,
+        priorities: dict[str, float],
+    ) -> tuple[EngineDecision, NegotiationState]:
+        """The engine's accept/counter/escalate decision at the (possibly adapted) ``theta`` using
+        ``priorities`` for the logrolling search. Pure; identical to the fixed engine when theta and
+        priorities are the fixed base."""
         t = state.round_index
-        theta = self.threshold(t)
 
         # --- Opening anchor: logrolled package at target, not a naive ideal. ---
         if incoming is None:
-            return self._counter(state, theta, reason="opening_anchor")
+            return self._counter(state, theta, reason="opening_anchor", priorities=priorities)
 
         # --- Unknown-term guard: accepting unmodeled obligations is a trap. ---
         unknown = set(incoming.terms) - set(self.envelope.term_map)
@@ -220,9 +290,42 @@ class DealEngine:
             u_in=u_in,
             best_u=best_u,
             stall_count=stall_count,
+            priorities=priorities,
         )
 
     # ---- Helpers -----------------------------------------------------------
+
+    def _annotate(
+        self,
+        decision: EngineDecision,
+        base_theta: float,
+        reciprocity: float,
+        incoming: Offer | None,
+        history: list[Offer],
+    ) -> EngineDecision:
+        """Attach the strategy read (tactic + rationale + base threshold) to a decision for the
+        human audit trail. Advisory only — it labels the decision the engine already made."""
+        from negotiation_agent.opponent_model import held_firm
+
+        held = [
+            t.name for t in self.envelope.terms if held_firm(self.envelope, history, term=t.name)
+        ]
+        tactic, rationale = choose_tactic(
+            is_opening=incoming is None,
+            incoming_utility=decision.incoming_utility,
+            adjusted_threshold=decision.threshold,
+            reservation=self.envelope.reservation_utility,
+            reciprocity=reciprocity,
+            supplier_held_terms=held,
+            at_deadline=decision.round_index >= self.config.max_rounds,
+        )
+        return decision.model_copy(
+            update={
+                "tactic": tactic,
+                "tactic_rationale": rationale,
+                "base_threshold": base_theta,
+            }
+        )
 
     def _counter(
         self,
@@ -234,10 +337,14 @@ class DealEngine:
         u_in: float | None = None,
         best_u: float | None = None,
         stall_count: int = 0,
+        priorities: dict[str, float] | None = None,
     ) -> tuple[EngineDecision, NegotiationState]:
         try:
             offer, realized, planned_v = fill_package(
-                self.envelope, theta, self._priorities, caps=state.concession_caps or None
+                self.envelope,
+                theta,
+                priorities if priorities is not None else self._priorities,
+                caps=state.concession_caps or None,
             )
         except InfeasiblePackage:
             # Caps have ratcheted below what theta needs — nothing legal left to offer.

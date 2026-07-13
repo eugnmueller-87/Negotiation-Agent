@@ -139,3 +139,55 @@ def test_decide_is_pure(simple_envelope):
     d2, s2 = eng.decide(state, offer)
     assert d1.model_dump() == d2.model_dump()
     assert s1.model_dump() == s2.model_dump()
+
+
+# ── adaptive "senior negotiator" mode ────────────────────────────────────────────
+def _adaptive(env, **cfg):
+    return DealEngine(env, SupplierModel.uniform(env), EngineConfig(adaptive=True, **cfg))
+
+
+def test_adaptive_off_by_default_preserves_the_fixed_engine(simple_envelope):
+    # a default engine and an explicitly-non-adaptive one must decide identically
+    plain = DealEngine(simple_envelope, SupplierModel.uniform(simple_envelope))
+    state = NegotiationState()
+    offer = Offer(terms={"price": 10.5, "rebate_pct": 4.0})
+    d, _ = plain.decide(state, offer)
+    assert d.tactic == "" and d.base_threshold is None  # no strategy annotations when off
+
+
+def test_adaptive_opening_is_annotated_anchor(simple_envelope):
+    eng = _adaptive(simple_envelope)
+    d, _ = eng.decide(NegotiationState(), None)
+    assert d.tactic == "anchor" and d.base_threshold is not None
+
+
+def test_adaptive_threshold_never_drops_below_reservation(simple_envelope):
+    # feed a stream of supplier offers; every decision's threshold must stay >= the floor
+    eng = _adaptive(simple_envelope, max_rounds=8)
+    state = NegotiationState()
+    _, state = eng.decide(state, None)
+    res = simple_envelope.reservation_utility
+    # a supplier that moves a lot (max reciprocity) is the case that could push the bar down
+    for price in (11.9, 11.0, 10.0, 9.5, 9.1):
+        offer = Offer(terms={"price": price, "rebate_pct": 8.0})
+        d, state = eng.decide(state, offer)
+        assert d.threshold >= res - 1e-9
+
+
+def test_adaptive_records_supplier_history(simple_envelope):
+    eng = _adaptive(simple_envelope)
+    state = NegotiationState()
+    _, state = eng.decide(state, None)
+    o1 = Offer(terms={"price": 11.5, "rebate_pct": 2.0})
+    _, state = eng.decide(state, o1)
+    assert state.supplier_history == [o1]
+
+
+def test_adaptive_is_deterministic(simple_envelope):
+    eng = _adaptive(simple_envelope)
+    state = NegotiationState()
+    _, state = eng.decide(state, None)
+    offer = Offer(terms={"price": 11.0, "rebate_pct": 4.0})
+    d1, s1 = eng.decide(state, offer)
+    d2, s2 = eng.decide(state, offer)
+    assert d1.model_dump() == d2.model_dump() and s1.model_dump() == s2.model_dump()
