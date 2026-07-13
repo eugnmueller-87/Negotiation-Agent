@@ -361,6 +361,69 @@ def test_total_and_unit_price_both_extracted():
     assert by.get("total_value") == 194920.0 and by.get("price") == 12.5
 
 
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        # net-N is authoritative document-wide — a context clause appearing EARLIER must not win
+        ("The Customer may dispute an invoice within thirty (30) days. Payment: net 45.", 45.0),
+        ("Notice of non-renewal is due 90 days before term end. Invoices payable net 30.", 30.0),
+        ("Supplier shall respond to due diligence within 10 days. Payment terms: net 30.", 30.0),
+    ],
+)
+def test_net_days_wins_over_an_earlier_context_clause(text, expected):
+    assert _value(text, "payment_days") == expected
+
+
+def test_contract_months_prefers_the_cued_term_over_warranty():
+    ex = extract_contract(
+        "Warranty: thirty-six (36) months on components. Term of Agreement: twelve (12) months."
+    )
+    assert next(t.value for t in ex.terms if t.name == "contract_months") == 12.0
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        # the party DEFINED as the supplier is chosen over document order
+        (
+            'entered into between Acme GmbH ("Customer") and Nova Software AG ("Supplier").',
+            "Nova Software AG",
+        ),
+        # a suffix-less first party (a municipality) must not merge with the supplier
+        (
+            'entered into between the City of Hamburg and Enpal Energy GmbH ("Supplier").',
+            "Enpal Energy GmbH",
+        ),
+    ],
+)
+def test_supplier_role_beats_document_order(text, expected):
+    assert extract_contract(text).supplier_name == expected
+
+
+def test_compound_adjective_prose_is_not_a_supplier():
+    # "Supplier-managed inventory at Bosch GmbH" names no supplier — must not grab Bosch (the buyer)
+    ex = extract_contract("All Supplier-managed inventory at Bosch Automotive GmbH facilities.")
+    assert ex.supplier_name is None
+
+
+def test_unit_price_with_cpi_indexation_is_not_a_total():
+    ex = extract_contract(
+        "The unit price of EUR 12.50 shall be adjusted annually in line with CPI."
+    )
+    by = {t.name: t.value for t in ex.terms}
+    assert by.get("price") == 12.5 and "total_value" not in by
+
+
+def test_three_decimal_unit_price_is_a_decimal_not_thousands():
+    # "EUR 1.375 per litre" is 1.375, not 1375 — fuel/chemical three-decimal pricing
+    assert _value("Unit price: EUR 1.375 per litre, exclusive of VAT.", "price") == 1.375
+
+
+def test_comma_grouped_price_stays_thousands_even_per_unit():
+    # the decimal re-read is DOT-only; "EUR 48,500 per unit" is a real machinery unit price of 48500
+    assert _value("The unit price is EUR 48,500 per unit for the CNC machine.", "price") == 48500.0
+
+
 def test_payment_within_parenthesized_days():
     assert _value("fees are due within thirty (30) days of invoice", "payment_days") == 30.0
 

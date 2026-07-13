@@ -124,21 +124,38 @@ _PER_UNIT_CONTEXT_RE = re.compile(
     r"|\bunit\s+price\b|\bprice\s+per\b|\bst(?:ü|ue)ckpreis\b",
     re.I,
 )
-# net-N is the authoritative payment term. The bare "N days" fallback requires a payment
-# context word nearby and a leading \b, so "90 days notice" (a termination clause) is not
-# misread as payment_days. net-N is preferred by being the first alternative searched.
-# The third alternative catches "due/payable within thirty (30) days" — real contracts spell the
-# number and give the digit in parentheses; the parenthesized digit is authoritative. A bounded
-# [^.\n]{0,40} context window keeps it linear and stops it reaching across sentences.
-_PAYMENT_RE = re.compile(
-    r"\bnet[\s-]?([0-9]{1,3})\b"
-    r"|\b(?:payment|due|invoice|payable|zahlungsziel|zahlbar)[^.\n]{0,40}?\bwithin\b"
+# A per-unit cue matched RIGHT AFTER a price figure ("EUR 1.375 per litre", "EUR 3.50/kg"), used to
+# disambiguate a "1.375"-shaped token as a decimal unit price rather than 1375 thousands. Any unit
+# noun works (litre/kg/unit/…), so this is broader than _PER_UNIT_CONTEXT_RE's fixed nouns.
+_PER_UNIT_CUE_RE = re.compile(r"\s*(?:per|pro|je|/|each)\b", re.I)
+# net-N ("net 30", "net-45") is the AUTHORITATIVE payment term and must win DOCUMENT-WIDE — even
+# when a context-word clause appears earlier in the text. Because `search` returns the leftmost
+# match across alternatives, keeping net-N as one alternative among others let an earlier
+# "dispute an invoice within (30) days" or "90 days notice" beat a later "net 45". So net-N is a
+# SEPARATE pattern searched first over the whole document; the context patterns are the fallback,
+# used only when no net-N exists anywhere. (Fable-5 red-team, verified 2026-07-13.)
+_PAYMENT_NET_RE = re.compile(r"\bnet[\s-]?([0-9]{1,3})\b", re.I)
+# Fallback: a payment-context word near a day count. The bounded [^.\n]{0,40} window keeps it
+# linear and stops it reaching across a sentence, so "90 days notice" (termination) is not misread.
+# The parenthesized-digit form ("due within thirty (30) days") is preferred — the digit is
+# authoritative when a contract spells the number.
+_PAYMENT_CONTEXT_RE = re.compile(
+    r"\b(?:payment|due|invoice|payable|zahlungsziel|zahlbar)[^.\n]{0,40}?\bwithin\b"
     r"[^.\n]{0,20}?\(([0-9]{1,3})\)\s*days?\b"
     r"|\b(?:payment|due|invoice|payable|zahlungsziel|zahlbar)[^.\n]{0,40}?\b([0-9]{1,3})\s*days?\b",
     re.I,
 )
-# Contract length in months. Prefer a parenthesized digit ("twenty-four (24) months") when
-# present — spelled numbers are common in the term clause and the digit is authoritative.
+# Contract length in months. A CONTEXT cue ("term/duration/period/Laufzeit") must precede the
+# number, so "Warranty: (36) months. Term: (12) months." reads the TERM (12), not the warranty
+# (36) — the leftmost bare mention would otherwise win. The bounded [^.\n]{0,40} window keeps it
+# linear and can't cross a sentence. Parenthesized digit preferred (the spelled-out number's digit
+# is authoritative). Bare "N months" with no cue is the fallback, used only when no cued term
+# exists. (Fable-5 red-team, verified 2026-07-13.)
+_MONTHS_CONTEXT_RE = re.compile(
+    r"\b(?:term|duration|period|laufzeit|vertragslaufzeit)\b[^.\n]{0,40}?"
+    r"(?:\(([0-9]{1,3})\)\s*(?:month|months)\b|\b([0-9]{1,3})\s*(?:month|months|mo)\b)",
+    re.I,
+)
 _MONTHS_RE = re.compile(
     r"\(([0-9]{1,3})\)\s*(?:month|months)\b|\b([0-9]{1,3})\s*(?:month|months|mo)\b", re.I
 )
@@ -162,12 +179,17 @@ _PER_UNIT_BAN = r"(?!\s*(?:per(?!\s+(?:annum|year)\b)|each|/|pro)\b)"
 _NUM_END = r"(?![\d.,]?\d)"
 # The captured number, then the token-boundary guard, then the per-unit-rate ban (see above).
 _TOTAL_NUM = "(" + _NUM + ")" + _NUM_END + _PER_UNIT_BAN
+# The 2nd-alt trailing window must NOT cross an adjustment/indexation verb: "unit price of EUR
+# 12.50 shall be adjusted annually in line with CPI" is a UNIT price with a CPI clause, not a total.
+# The lazy window is rewritten as (?:(?!<verb>)[^.\n]){0,20}? so the 'annually' cue can't be reached
+# past 'adjust/index/increas/revis'. (Fable-5 red-team, verified 2026-07-13.)
 _TOTAL_VALUE_RE = re.compile(
     r"\b(?:total|aggregate|annual)\b[^.\n]{0,30}?"
     r"\b(?:contract|subscription|order|deal)?\s*(?:value|fees?|spend)\b"
     r"[^.\n]{0,20}?(?:€|eur|usd|\$)\s*" + _TOTAL_NUM
     + r"|(?:€|eur|usd|\$)\s*" + _TOTAL_NUM
-    + r"[^.\n]{0,20}?\b(?:total|in total|per annum|per year|annually|for the (?:initial )?term)\b",
+    + r"(?:(?!\b(?:adjust|index|increas|revis))[^.\n]){0,20}?"
+    + r"\b(?:total|in total|per annum|per year|annually|for the (?:initial )?term)\b",
     re.I,
 )
 # A figure that is NEITHER a unit price NOR a contract value: a liability/indemnity/penalty CAP
@@ -193,24 +215,52 @@ _VOLUME_RE = re.compile(rf"(?<![\d.,])({_NUM})\s*(?:units|pcs|pieces|stück)\b",
 _REBATE_RE = re.compile(rf"(?<![\d.,])({_NUM})\s*%\s*(?:rebate|discount|rabatt)", re.I)
 # A legal-entity name: a capitalised run ending in a company suffix. Bounded length; the suffix
 # anchors the end so the run can't sprawl. Reused across the supplier patterns below.
+# Two guards (Fable-5 red-team, verified 2026-07-13):
+#  - (?-i:[A-Z]) forces a TRUE capital at the start even though the patterns compile with re.I —
+#    without it "Supplier-managed inventory at Bosch GmbH" lets the run start at lowercase 'managed'
+#    and grabs prose as an entity.
+#  - the inner run refuses to cross a standalone coordinator "and" ((?!\band\b)), so
+#    "City of Hamburg and Enpal Energy GmbH" doesn't merge two parties into one name.
 _ENTITY = (
-    r"[A-Z][\w&.,\- ]{2,60}?"
+    r"(?-i:[A-Z])(?:(?!\band\b)[\w&.,\- ]){2,60}?"
     r"(?:GmbH|AG|Ltd|LLC|Inc|Corp|Co|B\.V\.|N\.V\.|S\.A\.|S\.R\.L\.|SE|KG|plc|Pty)\b\.?"
 )
 
 # Supplier name, most-specific pattern first:
+#  0. a defined-term ROLE: "<Entity> ('Supplier')" — the party the contract DEFINES as the supplier,
+#     picked over document order so "between Buyer GmbH ('Customer') and Seller AG ('Supplier')"
+#     returns the Seller, not the first-named Buyer.
 #  1. an explicit "Supplier:/Vendor: <Entity>" label
 #  2. "entered into between <Entity>, ..." — the classic MSA preamble (the FIRST party named is
 #     usually the supplier/provider). We take the first entity after "between".
 #  3. "by <Entity> ('defined term')" / "<Entity> ('Provider')" — the provider defined-term form.
 _SUPPLIER_RES = (
-    # 1. A LABELLED field "Supplier: <Entity>". The delimiter (:/-/=) is REQUIRED and the entity
-    #    must start immediately after it — otherwise prose like "The Supplier shall provide services
-    #    to Acme Buyer GmbH" would grab the BUYER (the label word treated as running text).
+    # 0. Defined-term role: an entity immediately followed by ("Supplier"/"Vendor"/"Provider"/...).
+    #    Anchored on a leading between/and/und so re.I can't start the entity mid-sentence and so a
+    #    space-permitting entity run can't swallow leading prose ("Services provided by <Entity>" is
+    #    left to pattern 4). A verb like "provided by" is NOT a party-introducer, so it's excluded.
     re.compile(
-        rf"(?:supplier|vendor|lieferant|seller|provider|licensor)\s*[:\-=]\s*({_ENTITY})", re.I
+        rf"\b(?:between|and|und)\s+({_ENTITY})\s*[,;]?\s*"
+        r"\(\s*[\"'“]\s*(?:the\s+)?(?:supplier|vendor|seller|provider|licensor|contractor|lieferant)"
+        r"\b",
+        re.I,
     ),
-    re.compile(rf"\bentered into\b[^.\n]{{0,40}}?\bbetween\s+({_ENTITY})", re.I),
+    # 1. A LABELLED field "Supplier: <Entity>". The delimiter (:/=/ - ) is REQUIRED and the entity
+    #    must start immediately after it — otherwise prose like "The Supplier shall provide services
+    #    to Acme Buyer GmbH" would grab the BUYER. A hyphen counts as a delimiter only with
+    #    surrounding space, so the compound "Supplier-managed" is not read as label + delimiter.
+    re.compile(
+        rf"(?:supplier|vendor|lieferant|seller|provider|licensor)\s*(?:[:=]|\s-\s)\s*({_ENTITY})",
+        re.I,
+    ),
+    # 2. "entered into between <Entity>" — but if that first party is immediately defined as the
+    #    Customer/Buyer, reject it (a customer-first preamble) and fall through to the honest
+    #    "no supplier recognised" warning rather than researching the buyer.
+    re.compile(
+        rf"\bentered into\b[^.\n]{{0,40}}?\bbetween\s+({_ENTITY})"
+        r'(?!\s*[,;]?\s*\(\s*["\'“]\s*(?:the\s+)?(?:customer|buyer|client|purchaser|auftraggeber)\b)',
+        re.I,
+    ),
     re.compile(rf"\bby and between\s+({_ENTITY})", re.I),
     # "by <Entity> ("DefinedTerm")" — anchor on "by " so the entity can't greedily swallow the
     # preceding words. \bby\s+ then a NON-space-leading name run bounded before the suffix.
@@ -355,6 +405,14 @@ class RegexContractExtractor:
             if hit is None:
                 continue
             value, quote = hit
+            # Ambiguous "1.375": read as thousands (1375) by default, but as a DECIMAL (1.375) when
+            # a per-unit cue immediately follows — three-decimal unit pricing is standard for fuel,
+            # chemicals, energy ("EUR 1.375 per litre"). Restricted to a DOT separator: a comma form
+            # "48,500 per unit" is reliably thousands (a real machinery unit price), so only the dot
+            # form (which EU fuel/chemical pricing uses for the decimal) is re-read.
+            raw = m.group(1) or m.group(2) or ""
+            if re.fullmatch(r"[0-9]{1,3}\.[0-9]{3}", raw) and _PER_UNIT_CUE_RE.match(text, m.end()):
+                value = float(raw)
             if value in non_contract_amounts:
                 continue  # a cap/deposit/insurance figure is neither price nor total
             if total is not None and value == total[0]:
@@ -389,8 +447,22 @@ class RegexContractExtractor:
                 ExtractedTerm(name="price", value=price[0], quote=price[1], confidence=0.8)
             )
 
-        add("payment_days", _PAYMENT_RE)
-        add("contract_months", _MONTHS_RE)
+        # net-N wins document-wide; fall back to a context clause only when no net-N exists.
+        payment = find(_PAYMENT_NET_RE) or find(_PAYMENT_CONTEXT_RE)
+        if payment is not None:
+            terms.append(
+                ExtractedTerm(
+                    name="payment_days", value=payment[0], quote=payment[1], confidence=0.8
+                )
+            )
+        # a cued term ("Term: 12 months") wins over a bare mention (warranty periods, notice, etc.)
+        months = find(_MONTHS_CONTEXT_RE) or find(_MONTHS_RE)
+        if months is not None:
+            terms.append(
+                ExtractedTerm(
+                    name="contract_months", value=months[0], quote=months[1], confidence=0.8
+                )
+            )
         add("volume_units", _VOLUME_RE)
         add("rebate_pct", _REBATE_RE)
 
