@@ -723,6 +723,20 @@ function buildMandate(){
     config:{max_rounds:6, beta:2.5, stall_rounds:3, on_unknown_terms:"escalate"},
   };
 }
+// A plain-language reason the mandate can't be signed yet, or null when it's valid. Catches the
+// case the server-side Envelope validator rejects (best==worst) BEFORE we fire the request — so a
+// total-value-only contract with empty target/floor gets a clear instruction, not a raw traceback.
+function mandateProblem(){
+  const f=M.form;
+  const t=+f.target, fl=+f.floor;
+  if(!isFinite(t) || !isFinite(fl) || f.target==="" || f.floor==="")
+    return "Set a target price and a walk-away floor before signing — this contract gave a total value, not a per-unit price, so the engine has no band to negotiate in.";
+  if(t===fl)
+    return "Target and floor are the same — the engine needs a band to concede across. Set the floor to the worst price you'd still accept.";
+  if(fl<t)
+    return "Your walk-away floor is a better price than your target. For a price you're minimising, the floor should be the higher (worse) number.";
+  return null;
+}
 function normalizedWeights(){
   const f=M.form, terms=activeTerms();
   const raw = terms.reduce((s,t)=>s+Math.max(0.01,+f[t.weightKey]),0);
@@ -849,6 +863,7 @@ function understandView(){
 /* ── STEP 2 · Set the mandate ── */
 function mandateView(){
   const f=M.form;
+  const prob=mandateProblem();
   return `<div class="setup">
     ${stepper()}
     <div class="stephero">
@@ -877,11 +892,12 @@ function mandateView(){
     ${sectionTerms()}
     ${sectionSupplier()}
 
+    ${M.mandateError?`<div class="mx-warn">⚠ ${esc(M.mandateError)}</div>`:``}
     <div class="stepnav">
       <button class="btn ghost" id="backToUnderstandBtn"><svg width="14" height="14" style="transform:rotate(180deg)"><use href="#i-chev"/></svg> Back</button>
       <span class="sp"></span>
       <span class="meta">target ${eur(f.target)} · floor ${eur(f.floor)} · ${activeTerms().length} terms</span>
-      <button class="btn primary big" id="startBtn"><svg width="16" height="16"><use href="#i-seal"/></svg> Sign &amp; negotiate</button>
+      <button class="btn primary big" id="startBtn"${prob?" disabled title=\""+esc(prob)+"\"":""}><svg width="16" height="16"><use href="#i-seal"/></svg> Sign &amp; negotiate</button>
     </div>
   </div>`;
 }
@@ -1124,7 +1140,12 @@ function bindUnderstand(){
 
 function bindMandate(){
   ["supplier","category","supplierContact","buyerSignature","target","floor","paymentLever","contractMax","supplierOpen"].forEach(k=>{
-    const el=$("#f-"+k); if(el) el.oninput=()=>{ M.form[k]= el.type==="number"?+el.value:el.value; M.touched.add(k); };
+    const el=$("#f-"+k); if(el) el.oninput=()=>{
+      M.form[k]= el.type==="number"?+el.value:el.value; M.touched.add(k);
+      // clear a shown mandate error once the human edits a mandate number, and refresh the
+      // commercial breakdown + button state live — but keep focus by not re-rendering on every keystroke
+      if((k==="target"||k==="floor") && M.mandateError){ M.mandateError=null; render(); }
+    };
   });
   app.querySelectorAll(".persona").forEach(b=>b.onclick=()=>{ M.form.persona=b.dataset.p; render(); });
   // emphasis sliders — live-update the % readout without a full re-render (keeps focus)
@@ -1852,6 +1873,9 @@ function bindRun(){
 
 /* ══ negotiation loop ══════════════════════════════════════════════════════ */
 async function start(){
+  const problem = mandateProblem();
+  if(problem){ M.mandateError = problem; render(); return; }
+  M.mandateError = null;
   M.session = "s"+Math.random().toString(36).slice(2,10);
   M.transcript=[]; M.thread=[]; M.turns=[]; M.convergence=[];
   M.terminal=false; M.status="live"; M.error=null; M.tab="buyer"; M.busy=true;
