@@ -24,13 +24,14 @@ import logging
 import os
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
     from negotiation_agent import scan
 
 try:
     from fastapi import FastAPI, Request, UploadFile
+    from fastapi.concurrency import run_in_threadpool
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import FileResponse, JSONResponse
     from pydantic import BaseModel, Field
@@ -42,6 +43,12 @@ except ImportError as e:  # pragma: no cover - exercised only without the extra
 from negotiation_agent.brief import build_move_brief
 from negotiation_agent.engine import Outcome
 from negotiation_agent.llm import AnthropicDraftClient, DraftClient
+from negotiation_agent.mandate_factory import (
+    CompiledMandate,
+    ContractRow,
+    compile_row,
+    settled_savings,
+)
 from negotiation_agent.negotiate import (
     NegotiationClosed,
     build_engine,
@@ -957,6 +964,289 @@ def negotiate_resolve(req: ResolveRequest, request: Request) -> JSONResponse:
         guard=audit,
     )
     return JSONResponse(content=resp.model_dump(mode="json"))
+
+
+# --------------------------------------------------------------------------- #
+# Phase 3 — POST /portfolio/simulate: $0 batch negotiation against a SIMULATED
+# counterparty. Deterministic engine + ParametricSupplier only — no LLM call in
+# ANY mode, so it is not gated by _full_mode. Cost control is CPU-shaped:
+# an N-cap per request plus its own per-IP rate bucket.
+# --------------------------------------------------------------------------- #
+
+_PORTFOLIO_MAX_ROWS = int(os.getenv("PEITHO_PORTFOLIO_MAX_ROWS", "200"))
+_SIMULATE_RATE_PER_MIN = int(os.getenv("PEITHO_SIMULATE_RATE_PER_MIN", "4"))
+# Same schedule the tail-spend fleet demo runs (scripts/gen_tailspend_demo.py).
+_SIM_MAX_ROUNDS = 8
+_SIM_BETA = 4.0
+
+
+def _mix(seed: int) -> float:
+    """Deterministic float in [0,1) from an integer seed (splitmix64). Same
+    scheme as scripts/gen_tailspend_demo.py — the engine forbids RNG, so all
+    per-row variation (persona pick) is a pure function of the row index."""
+    z = (seed * 0x9E3779B97F4A7C15) & 0xFFFFFFFFFFFFFFFF
+    z = ((z ^ (z >> 30)) * 0xBF58476D1CE4E5B9) & 0xFFFFFFFFFFFFFFFF
+    z = ((z ^ (z >> 27)) * 0x94D049BB133111EB) & 0xFFFFFFFFFFFFFFFF
+    z = z ^ (z >> 31)
+    return (z & 0xFFFFFFFF) / 0x100000000
+
+
+class BatchRow(ContractRow):
+    """A ContractRow plus the raw contract text (cancel rows only, for the
+    termination clock). Capped per row so a batch can't smuggle a giant body."""
+
+    contract_text: str | None = Field(default=None, max_length=200_000)
+
+
+class SimulateRequest(BaseModel):
+    signed_by: str = Field(min_length=1, max_length=200)
+    buyer_name: str = Field(default="[Buyer]", max_length=200)
+    # A STATIC max bounds the whole-body pydantic parse before the env-tuned runtime cap
+    # runs (FIX 2) — otherwise a 10k-row body is fully parsed before the 413 fires.
+    rows: list[BatchRow] = Field(min_length=1, max_length=1000)
+
+
+class SimulatedRowResult(BaseModel):
+    row_id: str
+    supplier_name: str | None = None
+    action: Literal["negotiated", "terminate_notice", "queued_human_confirm"]
+    # A synthetic counterparty is not real money: EVERY row is method="simulated",
+    # never "exact" — "exact" is reserved for Phase-1 human-resolved deals.
+    method: Literal["simulated"] = "simulated"
+    # negotiation fields (action == "negotiated")
+    status: str | None = None  # closed_engine | closed_supplier | escalated | walked
+    escalated: bool = False
+    escalation_reason: str | None = None
+    rounds: int | None = None
+    persona: str | None = None
+    buyer_utility: float | None = None
+    settled_terms: dict[str, float] | None = None
+    baseline_price: float | None = None
+    settled_price: float | None = None
+    savings_basis: Literal["exact_vs_baseline", "utility_only", "none"] = "none"
+    saving_ratio: float | None = None  # (baseline - settled) / baseline; may be negative
+    saved_eur: float | None = None  # annual_spend * saving_ratio; None without a baseline+spend
+    # cancel fields (action == "terminate_notice") — cost avoidance is reported in
+    # its OWN column and never summed into negotiated savings.
+    cost_avoidance_eur: float | None = None
+    clock: dict[str, object] | None = None
+    notice_draft: str | None = None
+    notes: list[str] = Field(default_factory=list)
+
+
+class SimulateResponse(BaseModel):
+    method: Literal["simulated"] = "simulated"
+    n_rows: int
+    n_negotiated: int
+    n_closed: int
+    n_escalated: int
+    n_queued: int
+    n_terminations: int
+    total_saved_eur: float  # exact_vs_baseline closes only — honest money
+    total_cost_avoidance_eur: float  # cancel rows only — separate headline
+    rows: list[SimulatedRowResult]
+
+
+def _terminate_row(
+    row: BatchRow, buyer_name: str, reasons: list[str]
+) -> SimulatedRowResult:
+    """Cancel instruction: 100% reuse of the /terminate spine (termination.py).
+    Cost avoidance = one year of the row's spend, booked ONLY when the notice
+    window is not already MISSED — a missed window is not avoidable cost."""
+    import datetime as _dt
+
+    from negotiation_agent.intelligence import extract_intelligence
+    from negotiation_agent.termination import compute_clock, draft_termination_notice
+
+    notes = list(reasons)
+    clock_payload: dict[str, object] | None = None
+    notice: str | None = None
+    # Cost avoidance is booked ONLY when the exit window is genuinely servable — i.e. the
+    # clock says OPEN or CLOSING_SOON. A MISSED window means the next term is locked in; an
+    # UNKNOWN / NO_DEADLINE / text-less row has NO evidence the exit is servable. Booking a
+    # full year of avoidance in those cases would fabricate a saving (FIX 1, Fable verify).
+    window_servable = False
+    if row.contract_text:
+        intel = extract_intelligence(row.contract_text)
+        today = _dt.date.today()
+        clock = compute_clock(intel.lifecycle, intel.legal, today=today)
+        notice = draft_termination_notice(
+            clock,
+            supplier_name=intel.supplier_name or row.supplier_name,
+            buyer_name=buyer_name,
+            contract_reference=row.row_id,
+            today=today,
+            intent="non_renewal",
+        )
+        clock_payload = clock.model_dump(mode="json")
+        window_servable = clock.window_status in ("OPEN", "CLOSING_SOON")
+        if not window_servable:
+            notes.append(
+                f"notice window is {clock.window_status} — no evidence the exit is servable in "
+                "time, so NO cost avoidance is booked (verify the clock manually)"
+            )
+    else:
+        notes.append(
+            "no contract text supplied — POST the contract to /terminate for the "
+            "notice clock; no cost avoidance booked without a servable window"
+        )
+
+    if window_servable and row.annual_spend_eur:
+        avoidance = float(row.annual_spend_eur)
+        notes.append(
+            "cost avoidance = ONE year of this row's spend, assuming the non-renewal is served "
+            "in time — the avoided term may differ; verify the clock before relying on it"
+        )
+    else:
+        avoidance = None
+    return SimulatedRowResult(
+        row_id=row.row_id,
+        supplier_name=row.supplier_name,
+        action="terminate_notice",
+        cost_avoidance_eur=avoidance,
+        clock=clock_payload,
+        notice_draft=notice,
+        notes=notes,
+    )
+
+
+def _negotiate_row(
+    index: int, row: BatchRow, compiled: CompiledMandate
+) -> SimulatedRowResult:
+    """One real engine-vs-bot negotiation, savings derived from the settled price."""
+    from negotiation_agent.engine import DealEngine, EngineConfig
+    from negotiation_agent.simulator.loop import run_negotiation
+    from negotiation_agent.simulator.personas import AGGRESSIVE, COOPERATIVE, EVASIVE
+    from negotiation_agent.simulator.supplier import ParametricSupplier
+    from negotiation_agent.supplier_model import SupplierModel
+
+    buyer_env = compiled.buyer_envelope
+    sup_env = compiled.supplier_envelope
+    # Persona mix mirrors the tail-spend fleet (mostly cooperative), picked
+    # deterministically per row index so the whole batch replays bit-identically.
+    pool = [COOPERATIVE] * 6 + [EVASIVE] * 3 + [AGGRESSIVE] * 2
+    persona = pool[int(_mix(index * 3 + 2) * len(pool))]
+    cfg = EngineConfig(max_rounds=_SIM_MAX_ROUNDS, beta=_SIM_BETA)
+    # Uniform belief only: production has no oracle into a real supplier's head,
+    # so the simulation must not grant itself one (that would inflate capture).
+    engine = DealEngine(buyer_env, SupplierModel.uniform(buyer_env), cfg)
+    supplier = ParametricSupplier(sup_env, persona)
+    result = run_negotiation(
+        buyer_env,
+        engine,
+        supplier,
+        supplier_envelope=sup_env,
+        persona_name=persona.name,
+        belief_source="uniform",
+        config=cfg,
+    )
+
+    notes = list(compiled.reasons)
+    closed = result.status in ("closed_engine", "closed_supplier")
+    out: dict[str, object] = {
+        "row_id": row.row_id,
+        "supplier_name": row.supplier_name,
+        "action": "negotiated",
+        "status": result.status,
+        "escalated": result.status == "escalated",
+        "escalation_reason": result.escalation_reason,
+        "rounds": result.rounds_used,
+        "persona": persona.name,
+        "baseline_price": row.baseline_price,
+    }
+    if closed and result.final_deal is not None:
+        buyer_u = buyer_env.utility(result.final_deal)
+        settled_price = result.final_deal.terms.get("price")
+        out["buyer_utility"] = round(buyer_u, 4)
+        out["settled_terms"] = {k: round(v, 4) for k, v in result.final_deal.terms.items()}
+        out["settled_price"] = round(settled_price, 4) if settled_price is not None else None
+        if compiled.price_scaled and row.baseline_price and settled_price is not None:
+            ratio, eur = settled_savings(
+                baseline_price=row.baseline_price,
+                settled_price=settled_price,
+                annual_spend_eur=row.annual_spend_eur,
+            )
+            out["savings_basis"] = "exact_vs_baseline"
+            out["saving_ratio"] = ratio
+            out["saved_eur"] = eur
+            if eur is None:
+                notes.append("no annual spend supplied — saving reported as a ratio only")
+            if ratio < 0:
+                notes.append(
+                    "settled above baseline (a price increase inside the signed ±% band) — "
+                    "negative saving reported honestly"
+                )
+        else:
+            out["savings_basis"] = "utility_only"
+            notes.append("no baseline price — utility-only result, no EUR derived")
+    elif result.status == "escalated":
+        notes.append("escalated to a human buyer — no savings booked")
+    else:  # walked
+        notes.append("synthetic supplier walked away — no deal, no savings booked")
+    out["notes"] = notes
+    return SimulatedRowResult(**out)
+
+
+def _simulate_batch(req: SimulateRequest) -> dict[str, object]:
+    """CPU-bound batch body — runs inside run_in_threadpool. Pure Python, $0."""
+    rows: list[SimulatedRowResult] = []
+    for i, row in enumerate(req.rows):
+        compiled = compile_row(row, signed_by=req.signed_by)
+        if compiled.route == "terminate":
+            rows.append(_terminate_row(row, req.buyer_name, compiled.reasons))
+        elif compiled.route == "human_confirm":
+            rows.append(
+                SimulatedRowResult(
+                    row_id=row.row_id,
+                    supplier_name=row.supplier_name,
+                    action="queued_human_confirm",
+                    notes=compiled.reasons,
+                )
+            )
+        else:
+            rows.append(_negotiate_row(i, row, compiled))
+
+    negotiated = [r for r in rows if r.action == "negotiated"]
+    response = SimulateResponse(
+        n_rows=len(rows),
+        n_negotiated=len(negotiated),
+        n_closed=sum(1 for r in negotiated if r.status in ("closed_engine", "closed_supplier")),
+        n_escalated=sum(1 for r in negotiated if r.escalated),
+        n_queued=sum(1 for r in rows if r.action == "queued_human_confirm"),
+        n_terminations=sum(1 for r in rows if r.action == "terminate_notice"),
+        total_saved_eur=round(sum(r.saved_eur or 0.0 for r in negotiated), 2),
+        total_cost_avoidance_eur=round(
+            sum(r.cost_avoidance_eur or 0.0 for r in rows if r.action == "terminate_notice"), 2
+        ),
+        rows=rows,
+    )
+    return response.model_dump(mode="json")
+
+
+@app.post("/portfolio/simulate", response_model=None)
+async def portfolio_simulate(req: SimulateRequest, request: Request) -> JSONResponse:
+    """Negotiate a whole contract portfolio against a SIMULATED counterparty. $0.
+
+    Per row: compile the instruction into a baseline-scaled mandate
+    (mandate_factory), run the real deterministic engine vs the parametric
+    supplier bot, and derive savings from the settled price vs the row's own
+    baseline. "cancel" rows reuse the /terminate spine and report cost
+    avoidance separately. Every result is method="simulated" — a synthetic
+    counterparty never earns "exact". No LLM call exists on this path in any
+    mode, so it is not gated by _full_mode; it is N-capped and rate-limited
+    because the cost here is CPU, not tokens.
+    """
+    gate = _rate_gate(request, "simulate", limit=_SIMULATE_RATE_PER_MIN)
+    if gate is not None:
+        return gate
+    if len(req.rows) > _PORTFOLIO_MAX_ROWS:
+        return _err(
+            "too_many_rows",
+            f"portfolio batch is capped at {_PORTFOLIO_MAX_ROWS} rows per request",
+            413,
+        )
+    payload = await run_in_threadpool(_simulate_batch, req)
+    return JSONResponse(content=payload)
 
 
 @app.get("/health")
