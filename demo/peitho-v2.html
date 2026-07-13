@@ -68,6 +68,40 @@
   /* ── SETUP ─────────────────────────────────────────────── */
   .setup{max-width:720px;margin:0 auto;}
   .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-3);}
+
+  /* ── the pipeline stepper: Understand → Mandate → Negotiate → Prove ── */
+  .stepper{display:flex;align-items:center;gap:0;max-width:720px;margin:0 auto 24px;
+    background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:6px;overflow:hidden;}
+  .step{flex:1;display:flex;align-items:center;gap:9px;padding:9px 12px;border-radius:8px;
+    font-size:12.5px;color:var(--ink-3);cursor:default;position:relative;min-width:0;}
+  .step.clickable{cursor:pointer;} .step.clickable:hover{background:var(--surface-2);}
+  .step .step-n{width:22px;height:22px;border-radius:50%;flex:none;display:grid;place-items:center;
+    font-family:var(--mono);font-size:11px;font-weight:600;background:var(--surface-2);color:var(--ink-3);border:1px solid var(--line);}
+  .step .step-lbl{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .step.on{color:var(--ink);} .step.on .step-n{background:var(--buyer);color:#fff;border-color:var(--buyer);}
+  .step.done{color:var(--ink-2);} .step.done .step-n{background:color-mix(in srgb,var(--good) 18%,transparent);color:var(--good);border-color:transparent;}
+  .step.done .step-n::after{content:"✓";}
+  .step.done .step-n{font-size:0;} .step.done .step-n::after{font-size:12px;}
+  .step-arrow{color:var(--ink-3);flex:none;padding:0 2px;font-size:12px;}
+  @media (max-width:640px){ .step .step-lbl{display:none;} }
+
+  /* per-step hero header */
+  .stephero{max-width:720px;margin:0 auto 18px;}
+  .stephero .eyebrow{margin-bottom:4px;}
+  .stephero h1{font-size:26px;line-height:1.15;margin:0 0 6px;}
+  .stephero p{font-size:13.5px;color:var(--ink-2);line-height:1.55;margin:0;max-width:60ch;}
+
+  /* ── ONE unified card component (replaces .panel/.essence/.keypts/.intel-out variants) ── */
+  .card{max-width:720px;margin:0 auto 16px;border:1px solid var(--line);border-radius:14px;
+    background:var(--surface);overflow:hidden;box-shadow:0 1px 0 rgba(0,0,0,.02);}
+  .card-hd{display:flex;align-items:center;gap:9px;padding:12px 16px;border-bottom:1px solid var(--line);
+    background:var(--surface-2);font-size:13px;font-weight:600;color:var(--ink);}
+  .card-hd svg{color:var(--buyer);flex:none;} .card-hd .card-sub{font-weight:400;color:var(--ink-3);font-size:11.5px;margin-left:auto;}
+  .card-bd{padding:14px 16px;}
+  .card.accent-good{border-left:3px solid var(--good);} .card.accent-warn{border-left:3px solid var(--warn);}
+  .card.accent-crit{border-left:3px solid var(--crit);}
+  .stepnav{max-width:720px;margin:22px auto 0;display:flex;align-items:center;gap:12px;}
+  .stepnav .sp{flex:1;}
   .setup h1{font-size:31px;line-height:1.12;margin:12px 0 14px;}
   .lede{font-size:16px;color:var(--ink-2);line-height:1.55;max-width:60ch;}
   .lede b{color:var(--ink);font-weight:600;}
@@ -581,7 +615,7 @@ function fmtTerm(name, x){
 }
 
 const M = {
-  phase:"setup",
+  phase:"understand",
   form:{
     supplier:"Nordwerk Verpackung GmbH", category:"Corrugated packaging — annual supply",
     supplierContact:"", buyerSignature:"Procurement Team",
@@ -732,11 +766,47 @@ function supplierMove(persona, round){
 
 /* ══ RENDER ══════════════════════════════════════════════════════════════ */
 const app = $("#app");
+// The pipeline: understand → mandate → negotiate → prove. cockpit is reachable from understand.
+const STEPS=[
+  {id:"understand", n:1, lbl:"Understand"},
+  {id:"mandate",    n:2, lbl:"Set the mandate"},
+  {id:"negotiate",  n:3, lbl:"Negotiate"},
+  {id:"proof",      n:4, lbl:"Proof & audit"},
+];
+// map internal phases to a pipeline step for the stepper
+function currentStep(){
+  if(M.phase==="understand"||M.phase==="cockpit") return "understand";
+  if(M.phase==="mandate") return "mandate";
+  if(M.phase==="running"||M.phase==="live") return "negotiate";
+  if(M.phase==="proof") return "proof";
+  return "understand";
+}
+function stepper(){
+  const cur=currentStep();
+  const curIdx=STEPS.findIndex(s=>s.id===cur);
+  return `<div class="stepper">${STEPS.map((s,i)=>{
+    const state = i<curIdx?"done":i===curIdx?"on":"";
+    // allow clicking BACK to a completed step (never forward past where you are)
+    const clickable = i<curIdx;
+    return `${i>0?'<span class="step-arrow">›</span>':''}<div class="step ${state}${clickable?' clickable':''}" ${clickable?`data-step="${s.id}"`:''}>
+      <span class="step-n">${s.n}</span><span class="step-lbl">${s.lbl}</span></div>`;
+  }).join("")}</div>`;
+}
+
 function render(){
-  app.innerHTML = M.phase==="cockpit" ? cockpitView() : M.phase==="setup" ? setupView() : runView();
-  if(M.phase==="cockpit") bindCockpit();
-  else if(M.phase==="setup") bindSetup();
-  else bindRun();
+  const p=M.phase;
+  app.innerHTML =
+      p==="cockpit"   ? cockpitView()
+    : p==="mandate"   ? mandateView()
+    : p==="proof"     ? proofView()
+    : (p==="running"||p==="live") ? runView()
+    : understandView();
+  if(p==="cockpit") bindCockpit();
+  else if(p==="mandate") bindMandate();
+  else if(p==="proof") bindProof();
+  else if(p==="running"||p==="live") bindRun();
+  else bindUnderstand();
+  bindStepper();
   for(const id of ["threadBuyer","threadSupplier"]){ const el=$("#"+id); if(el) el.scrollTop=el.scrollHeight; }
 }
 
@@ -747,40 +817,68 @@ function render(){
   ap(t);
   $("#themeBtn").onclick=()=>{ t=(document.documentElement.getAttribute("data-theme")==="dark")?"light":"dark"; ap(t); };
 })();
-$("#homeBtn").onclick=()=>{ if(M.phase!=="setup"){ M.phase="setup"; render(); } };
+$("#homeBtn").onclick=()=>{ if(M.phase!=="understand"){ M.phase="understand"; render(); } };
 
 /* ── setup view ── */
-function setupView(){
-  const f=M.form;
+/* ── STEP 1 · Understand ── */
+function understandView(){
+  const read = !!M.intel.result;
   return `<div class="setup">
-    <div class="eyebrow">the deterministic negotiator</div>
-    <h1>The model advises. The engine decides.</h1>
-    <p class="lede">A real procurement negotiation runs on the server: a deterministic engine
-      makes every accept / counter / walk-away call and fixes the exact figures a reply may state.
-      The message layer — <b>whether templated or written by a language model</b> — <b>cannot state a
-      number the engine didn't approve</b>. You watch it happen, including the moment the guard
-      rejects a draft. <span class="lede-mode" id="ledeMode"></span></p>
-    <div class="modenote" id="modenote"><span class="dot"></span><span id="modenoteText">checking backend…</span></div>
+    ${stepper()}
+    <div class="stephero">
+      <div class="eyebrow">step 1 · understand</div>
+      <h1>What's in this contract?</h1>
+      <p>Upload the current or expiring contract. Peitho extracts the deal, flags the risks, and
+        lets you approve everything before it shapes your mandate — the model advises, the engine
+        decides. <span class="lede-mode" id="ledeMode"></span></p>
+    </div>
+    <div class="modenote" id="modenote" style="max-width:720px;margin:0 auto 16px;"><span class="dot"></span><span id="modenoteText">checking backend…</span></div>
 
     ${sectionIntel()}
 
-    <div class="grid">
-      ${field("Supplier","legal counterparty",`<input class="in" id="f-supplier" value="${esc(f.supplier)}">`)}
-      ${field("Category","",`<input class="in" id="f-category" value="${esc(f.category)}">`)}
-      ${field("Target price (€/unit)","the aspiration",`<input class="in" type="number" step="0.5" id="f-target" value="${f.target}">`)}
-      ${field("Walk-away floor (€/unit)","never cross this",`<input class="in" type="number" step="0.5" id="f-floor" value="${f.floor}">`)}
-      ${field("Payment lever (max net-days)","a term to trade",`<input class="in" type="number" id="f-paymentLever" value="${f.paymentLever}">`)}
-      ${field("Max contract length (months)","",`<input class="in" type="number" id="f-contractMax" value="${f.contractMax}">`)}
+    <div class="stepnav">
+      <span class="sp"></span>
+      <button class="btn primary big" id="toMandateBtn"><svg width="15" height="15"><use href="#i-chev"/></svg> ${read?"Continue to the mandate":"Skip — set the mandate manually"}</button>
+    </div>
+  </div>`;
+}
+
+/* ── STEP 2 · Set the mandate ── */
+function mandateView(){
+  const f=M.form;
+  return `<div class="setup">
+    ${stepper()}
+    <div class="stephero">
+      <div class="eyebrow">step 2 · set the mandate</div>
+      <h1>What's your walk-away?</h1>
+      <p>The mandate is the human-owned rulebook the engine negotiates under: your aspiration, your
+        floor, and what you'll trade. The engine never crosses it.</p>
+    </div>
+
+    <div class="card"><div class="card-hd"><svg width="14" height="14"><use href="#i-seal"/></svg> The deal terms</div>
+      <div class="card-bd">
+        <div class="grid">
+          ${field("Supplier","legal counterparty",`<input class="in" id="f-supplier" value="${esc(f.supplier)}">`)}
+          ${field("Category","",`<input class="in" id="f-category" value="${esc(f.category)}">`)}
+          ${field("Target price (€/unit)","the aspiration",`<input class="in" type="number" step="0.5" id="f-target" value="${f.target}">`)}
+          ${field("Walk-away floor (€/unit)","never cross this",`<input class="in" type="number" step="0.5" id="f-floor" value="${f.floor}">`)}
+          ${field("Payment lever (max net-days)","a term to trade",`<input class="in" type="number" id="f-paymentLever" value="${f.paymentLever}">`)}
+          ${field("Max contract length (months)","",`<input class="in" type="number" id="f-contractMax" value="${f.contractMax}">`)}
+        </div>
+      </div>
     </div>
 
     ${sectionMandateExplainer()}
+    ${sectionPrior()}
     ${sectionEmphasis()}
     ${sectionTerms()}
     ${sectionSupplier()}
 
-    <div class="startrow">
-      <button class="btn primary big" id="startBtn"><svg width="16" height="16"><use href="#i-seal"/></svg> Sign the mandate &amp; open</button>
-      <span class="meta">target ${eur(f.target)} · floor ${eur(f.floor)} · ${activeTerms().length} terms on the table</span>
+    <div class="stepnav">
+      <button class="btn ghost" id="backToUnderstandBtn"><svg width="14" height="14" style="transform:rotate(180deg)"><use href="#i-chev"/></svg> Back</button>
+      <span class="sp"></span>
+      <span class="meta">target ${eur(f.target)} · floor ${eur(f.floor)} · ${activeTerms().length} terms</span>
+      <button class="btn primary big" id="startBtn"><svg width="16" height="16"><use href="#i-seal"/></svg> Sign &amp; negotiate</button>
     </div>
   </div>`;
 }
@@ -1002,7 +1100,23 @@ function sectionSupplier(){
 function field(label,note,input){
   return `<div class="fld"><label>${label}${note?` <i>· ${note}</i>`:""}</label>${input}</div>`;
 }
-function bindSetup(){
+// step navigation: click a completed step in the stepper to go back
+function bindStepper(){
+  app.querySelectorAll(".step.clickable").forEach(s=>s.onclick=()=>{
+    const id=s.dataset.step;
+    M.phase = id==="understand"?"understand" : id==="mandate"?"mandate"
+            : id==="negotiate"?(M.status==="live"?"running":"running") : id;
+    render();
+  });
+}
+
+function bindUnderstand(){
+  bindIntel();
+  const t=$("#toMandateBtn"); if(t) t.onclick=()=>{ M.phase="mandate"; render(); };
+  refreshHealth();
+}
+
+function bindMandate(){
   ["supplier","category","supplierContact","buyerSignature","target","floor","paymentLever","contractMax","supplierOpen"].forEach(k=>{
     const el=$("#f-"+k); if(el) el.oninput=()=>{ M.form[k]= el.type==="number"?+el.value:el.value; M.touched.add(k); };
   });
@@ -1017,13 +1131,16 @@ function bindSetup(){
       if(def && nw[def.name]!=null) s.querySelector(".wval").textContent=Math.round(nw[def.name]*100)+"%";
     });
   });
-  // optional-term toggles + concession pace (re-render to reflect structure change)
   app.querySelectorAll(".termchip.toggle").forEach(b=>b.onclick=()=>{ M.form[b.dataset.toggle]=!M.form[b.dataset.toggle]; render(); });
   app.querySelectorAll(".segbtn").forEach(b=>b.onclick=()=>{ M.form.concession=b.dataset.pace; render(); });
-  bindIntel();
+  const back=$("#backToUnderstandBtn"); if(back) back.onclick=()=>{ M.phase="understand"; render(); };
   $("#startBtn").onclick=start;
-  refreshHealth();
 }
+
+// Step 5 (learned prior) + Step 6 (proof) — filled in later build steps; safe stubs now.
+function sectionPrior(){ return ""; }
+function proofView(){ return `<div class="setup">${stepper()}<div class="stephero"><div class="eyebrow">step 4 · proof &amp; audit</div><h1>Proof of floor</h1><p>Coming next: replay the negotiation and prove the engine never crossed your walk-away floor.</p></div><div class="stepnav"><button class="btn ghost" id="proofBackBtn">Back</button></div></div>`; }
+function bindProof(){ const b=$("#proofBackBtn"); if(b) b.onclick=()=>{ M.phase="running"; render(); }; }
 
 function bindIntel(){
   const ta=$("#intelText"); if(ta) ta.oninput=()=>{ M.intel.text=ta.value; M.intel.filename=""; };
@@ -1411,7 +1528,7 @@ function jumpToAnchor(anchorId){
 }
 
 function bindCockpit(){
-  const back=$("#cxBack"); if(back) back.onclick=()=>{ M.phase="setup"; render(); };
+  const back=$("#cxBack"); if(back) back.onclick=()=>{ M.phase="understand"; render(); };
   document.querySelectorAll("[data-cxtab]").forEach(b=>b.onclick=()=>{ M.cockpit.tab=b.getAttribute("data-cxtab"); render(); });
   document.querySelectorAll("[data-cat]").forEach(b=>b.onclick=()=>{ M.cockpit.catFilter=b.getAttribute("data-cat"); render(); });
   document.querySelectorAll("[data-sev]").forEach(b=>b.onclick=()=>{ M.cockpit.sevFilter=b.getAttribute("data-sev"); render(); });
@@ -1446,7 +1563,8 @@ function renderAnswer(data){
 function runView(){
   const f=M.form;
   const waiting = M.status==="live" && !M.terminal;
-  return `${mandateCard()}
+  return `${stepper()}
+    ${mandateCard()}
     <div class="transport">
       <button class="btn primary" id="stepBtn" ${M.busy||M.terminal?"disabled":""}><svg width="15" height="15"><use href="#i-step"/></svg> ${M.busy?"…":"Step one round"}</button>
       <button class="btn ghost" id="autoBtn" ${M.busy||M.terminal?"disabled":""}><svg width="14" height="14"><use href="#i-play"/></svg> Auto-play</button>
@@ -1721,7 +1839,7 @@ function banner(){
 function bindRun(){
   const s=$("#stepBtn"); if(s) s.onclick=()=>step();
   const a=$("#autoBtn"); if(a) a.onclick=autoplay;
-  const ag=$("#againBtn"); if(ag) ag.onclick=()=>{ M.phase="setup"; render(); };
+  const ag=$("#againBtn"); if(ag) ag.onclick=()=>{ M.phase="understand"; render(); };
   app.querySelectorAll(".tab").forEach(b=>b.onclick=()=>{ M.tab=b.dataset.tab; render(); });
 }
 
