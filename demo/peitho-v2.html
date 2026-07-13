@@ -198,6 +198,7 @@
   .keypts .kp-k{font-family:var(--mono);font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-3);}
   .keypts .kp-v{color:var(--ink);} .keypts .kp-v b{font-weight:600;} .keypts .kp-v .unk{color:var(--ink-3);}
   .keypts .kp-flag{color:var(--warn);font-weight:600;}
+  .keypts .kp-sub{color:var(--ink-3);font-size:11.5px;font-family:var(--mono);}
   .keypts-none{padding:12px 14px;font-size:12.5px;color:var(--ink-3);}
   .rawtext{margin:2px 0 12px;}
   .rawtext > summary{cursor:pointer;font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;
@@ -965,6 +966,41 @@ Category: Corrugated packaging
 // The important parts of the contract as BULLETS — replaces the raw-text dump. Deterministic:
 // every point is a fact the extractor pulled, so it works free (no LLM). The full text is still
 // available behind a "show full text" toggle for anyone who wants to verify.
+// The unit the contract actually uses, from the backend's detected units_of_measure — "licence",
+// "seat", "kg" etc. We only claim a unit the CONTRACT named; if none was detected we say nothing
+// (no hardcoded "per unit"). Time units (month/year) describe a subscription period, not a priced
+// unit, so they don't label a per-unit price. Returns "" when the contract names no priced unit.
+function pricedUnit(intel){
+  const uoms = (intel && intel.units_of_measure) || [];
+  const priced = uoms.filter(u => !/^(month|year)s?$/i.test(u));
+  if(!priced.length) return "";
+  // singularise the common plurals so it reads "per licence", not "per licences"
+  return priced[0].replace(/s$/,"");
+}
+
+// Total contract spend from what the contract states. Honest by construction:
+//  - a per-unit price + a volume + a term  → price × annual-volume × years, WITH the formula shown;
+//  - a per-unit price + a term but NO volume → we can't total it, so ask for the volume (no fake number);
+//  - a total_value contract → the spend is already stated elsewhere, so return null (no double-count).
+// Assumes `volume_units` is an ANNUAL volume (the extractor pulls "annual volume: N"); labelled as such.
+function estimateSpend(terms){
+  const UNIT_PRICE_MAX = 10000;
+  const hasUnitPrice = terms.price!=null && terms.price<=UNIT_PRICE_MAX;
+  if(!hasUnitPrice) return null;  // total_value / lump-sum contracts already state the spend
+  const months = terms.contract_months;
+  const years = months!=null ? months/12 : null;
+  if(terms.volume_units!=null && years!=null){
+    const total = terms.price * terms.volume_units * years;
+    return `<b>${eur(total)}</b> <span class="kp-sub">= ${eur(terms.price)} × ${int(terms.volume_units)}/yr × ${num(years,1)} yr</span>`;
+  }
+  if(terms.volume_units!=null){  // volume but no term → annualised
+    const annual = terms.price * terms.volume_units;
+    return `<b>${eur(annual)}/yr</b> <span class="kp-sub">= ${eur(terms.price)} × ${int(terms.volume_units)}/yr — no term found, so annual only</span>`;
+  }
+  // per-unit price but no volume: we honestly can't total it
+  return `<span class="kp-flag">enter the annual volume in the mandate step to see total spend</span>`;
+}
+
 function intelKeyPoints(r){
   const i=r.intelligence, ext=i.extraction, life=i.lifecycle||{}, legal=i.legal||{};
   const terms=Object.fromEntries((ext.terms||[]).map(t=>[t.name,t.value]));
@@ -977,13 +1013,22 @@ function intelKeyPoints(r){
   // never render it as "per unit". Mirrors PLAUSIBLE_UNIT_MAX in fillFormFromExtraction so the display
   // and the form agree. Belt-and-suspenders: the backend now relabels these as total_value too.
   const UNIT_PRICE_MAX = 10000;
-  if(terms.price!=null && terms.price<=UNIT_PRICE_MAX) add("Unit price", `<b>${eur(terms.price)}</b> per unit`);
+  const unit = pricedUnit(i);  // the contract's OWN unit noun, or "" if it named none
+  // Only say "per <unit>" when the contract actually named the unit — otherwise show the bare price,
+  // never a made-up "per unit". (The unit of measure differs by contract; we don't invent one.)
+  const perUnit = unit ? ` per ${esc(unit)}` : "";
+  if(terms.price!=null && terms.price<=UNIT_PRICE_MAX) add("Price", `<b>${eur(terms.price)}</b>${perUnit}`);
   else if(terms.total_value!=null) add("Total value", `<b>${eur(terms.total_value)}</b> — total/annual, not per-unit`);
   else if(terms.price!=null) add("Total value", `<b>${eur(terms.price)}</b> — too large for a unit price; read as total/annual`);
   if(terms.payment_days!=null) add("Payment", `net-${Math.round(terms.payment_days)} days`);
-  if(terms.volume_units!=null) add("Volume", `${int(terms.volume_units)} units`);
+  if(terms.volume_units!=null) add("Volume", `${int(terms.volume_units)}${unit?" "+esc(unit)+"s":" units"}`);
   if(terms.contract_months!=null) add("Term", `${Math.round(terms.contract_months)} months`);
   if(terms.rebate_pct!=null) add("Rebate", `${num(terms.rebate_pct,1)}%`);
+  // Total contract spend — the number a buyer cares about most. Computable only with a real per-unit
+  // price AND a volume; show the formula so it's not a black box. Without volume we DON'T fake a
+  // total — we say what's missing. total_value contracts already state the spend, so skip then.
+  const spend = estimateSpend(terms);
+  if(spend) add("Est. contract spend", spend);
   const exp=life.expiration_date&&life.expiration_date.value;
   if(exp) add("Expiry", esc(String(exp)));
   // legal flags — only surface the ones that MATTER (present protections + risk flags)
@@ -1169,6 +1214,7 @@ function bindMandate(){
   // emphasis sliders — live-update the % readout without a full re-render (keeps focus)
   app.querySelectorAll(".range").forEach(r=>r.oninput=()=>{
     M.form[r.dataset.w]=+r.value;
+    M.touched.add(r.dataset.w);  // a human-moved slider is never re-overwritten by category emphasis
     const nw=normalizedWeights();
     app.querySelectorAll(".slider").forEach(s=>{
       const key=s.querySelector(".range").dataset.w;
@@ -1303,6 +1349,33 @@ function fillFormFromExtraction(r){
     M.form.contractMax=Math.round(+terms.contract_months);
   if(terms.payment_days!=null && !M.touched.has("paymentLever"))
     M.form.paymentLever=Math.max(+M.form.paymentLever, +terms.payment_days);
+  applyCategoryEmphasis(ext.category);
+}
+
+// Opening emphasis (term weights) should reflect the CATEGORY, not a fixed 50/25/25 for every
+// contract. A commodity is price-led; a SaaS/licence deal is term/renewal-led; a logistics deal
+// leans on payment. These are STARTING points a buyer tunes — heuristics, not market truth — so
+// the sliders stay editable and a manually-moved slider (M.touched) is never overwritten.
+const _CATEGORY_EMPHASIS = [
+  // [regex on category text, {wPrice,wPayment,wContract}]
+  [/saas|software|licen[cs]e|subscription|cloud|seat|user/i, {wPrice:35, wPayment:20, wContract:45}],
+  [/logistic|freight|transport|shipping|warehous/i,          {wPrice:40, wPayment:40, wContract:20}],
+  [/consult|service|agency|staffing|professional/i,          {wPrice:45, wPayment:30, wContract:25}],
+  [/packag|steel|resin|commodity|raw material|chemical|metal|corrugated/i, {wPrice:60, wPayment:20, wContract:20}],
+  [/energy|electricity|gas|utility|power/i,                  {wPrice:55, wPayment:15, wContract:30}],
+];
+function categoryWeights(category){
+  const c = (category||"").toLowerCase();
+  const hit = _CATEGORY_EMPHASIS.find(([re])=>re.test(c));
+  return hit ? hit[1] : null;  // null → keep the neutral default (unknown category)
+}
+function applyCategoryEmphasis(category){
+  const w = categoryWeights(category);
+  if(!w) return;  // unknown category → leave the current weights
+  // never overwrite a slider the human has moved
+  if(!M.touched.has("wPrice"))    M.form.wPrice=w.wPrice;
+  if(!M.touched.has("wPayment"))  M.form.wPayment=w.wPayment;
+  if(!M.touched.has("wContract")) M.form.wContract=w.wContract;
 }
 
 async function applyIntel(){
