@@ -591,6 +591,23 @@
   .pchip.human-led{background:color-mix(in srgb,var(--warn) 15%,transparent);color:var(--warn);}
   .pchip.closed{background:color-mix(in srgb,var(--good) 14%,transparent);color:var(--good);}
   .pchip.cancelled{background:var(--surface-2);color:var(--ink-3);text-decoration:line-through;border-color:var(--line);}
+  /* batch simulate */
+  .batch{max-width:820px;margin:16px auto 0;border:1px solid var(--line);border-radius:14px;background:var(--surface);padding:16px 18px;}
+  .batch-hd{font-weight:600;font-size:14px;color:var(--ink);}
+  .batch-hd .batch-sub{font-weight:400;font-size:11.5px;color:var(--ink-3);margin-left:8px;}
+  .batch-help{font-size:12px;color:var(--ink-2);margin:8px 0 10px;line-height:1.5;}
+  .batch-ta{width:100%;font-family:var(--mono);font-size:12.5px;}
+  .batch-btns{display:flex;gap:9px;margin-top:10px;}
+  .batch-out{margin-top:14px;}
+  .batch-totals{font-size:12.5px;color:var(--ink-2);display:flex;flex-wrap:wrap;gap:8px;align-items:baseline;margin-bottom:10px;}
+  .batch-totals .bt-tot{margin-left:auto;color:var(--ink);}
+  .batch-tbl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;}
+  .batch-tbl{width:100%;border-collapse:collapse;font-size:13px;}
+  .batch-tbl th{text-align:left;font-family:var(--mono);font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-3);padding:8px 12px;border-bottom:1px solid var(--line);}
+  .batch-tbl td{padding:8px 12px;border-bottom:1px solid var(--line);}
+  .batch-tbl tr:last-child td{border-bottom:none;}
+  .batch-tbl .neg{color:var(--crit);}
+  .batch-note{font-size:11px;color:var(--ink-3);margin-top:10px;line-height:1.5;}
 </style>
 </head>
 <body>
@@ -717,7 +734,7 @@ let M = PROJECTS.length ? PROJECTS[PROJECTS.length-1] : freshProject();
 if(!PROJECTS.includes(M)) PROJECTS.push(M);
 // The portfolio is an APP-level overlay, not project state — a project's own
 // phase is never overwritten by visiting it, so reopening restores the phase.
-const APP = { portfolio: PROJECTS.length > 1 };
+const APP = { portfolio: PROJECTS.length > 1, batch:{ open:false, busy:false, error:null, text:"", result:null } };
 
 // Every negotiable term the demo can put on the table. `weightKey` maps to M.form.
 const TERM_DEFS = [
@@ -1454,13 +1471,113 @@ function portfolioView(){
       ${unbooked?`<div class="proll-note">${unbooked} close${unbooked>1?"s":""} without a € baseline — utility-only, not counted</div>`:""}
     </div>
     <div class="plist">${rows}</div>
+    ${batchPanel()}
     <div class="stepnav"><span class="sp"></span>
+      <button class="btn ghost" id="batchBtn"><svg width="15" height="15"><use href="#i-split"/></svg> ${APP.batch.open?"Hide batch":"Batch simulate ($0)"}</button>
       <button class="btn primary big" id="newProjBtn"><svg width="15" height="15"><use href="#i-plus"/></svg> New negotiation</button>
     </div>
   </div>`;
 }
+
+// Batch simulation panel — drop many contract rows, one instruction each, and negotiate them ALL
+// against a SIMULATED counterparty ($0, real engine). Every result is method="simulated" and lands
+// with an honest savings figure (or utility-only when there's no baseline). This is the mass-upload
+// a category manager needs; the honesty (no fabricated savings) is enforced server-side.
+function batchPanel(){
+  const b=APP.batch;
+  if(!b.open) return "";
+  const sample = "Nordwerk GmbH, renew, 10, 272, 250000\nAcme Ltd, renew, 5, 11.50, 80000\nOld Vendor, cancel";
+  return `<div class="batch">
+    <div class="batch-hd">Batch simulate <span class="batch-sub">one contract per line · $0 · simulated counterparty</span></div>
+    <div class="batch-help">Format per line: <span class="mono">supplier, instruction, ±% , baseline_price, annual_spend</span>.
+      <b>renew</b> needs the ±% (and a baseline price to book € savings); <b>cancel</b> needs only the supplier.
+      Rows without a baseline negotiate but show utility only — never a made-up €.</div>
+    <textarea class="in batch-ta" id="batchText" rows="6" placeholder="${esc(sample)}">${esc(b.text)}</textarea>
+    ${b.error?`<div class="mx-warn">⚠ ${esc(b.error)}</div>`:""}
+    <div class="batch-btns">
+      <button class="btn primary" id="batchRun" ${b.busy?"disabled":""}>${b.busy?'<span class="spin"></span> Negotiating…':'▶ Simulate the batch'}</button>
+      <button class="btn ghost" id="batchSample">Load an example</button>
+    </div>
+    ${b.result?batchResult(b.result):""}
+  </div>`;
+}
+
+function batchResult(d){
+  const row = r => {
+    if(r.action==="terminate_notice") return `<tr><td>${esc(r.row_id)}</td><td><span class="pchip cancelled">cancel</span></td><td>—</td><td class="mono">${r.cost_avoidance_eur!=null?eur(r.cost_avoidance_eur)+" avoided":"—"}</td></tr>`;
+    if(r.action==="queued_human_confirm") return `<tr><td>${esc(r.row_id)}</td><td><span class="pchip draft">confirm</span></td><td>—</td><td class="mono">low confidence — verify baseline</td></tr>`;
+    const chip = r.escalated?`<span class="pchip escalated">escalated</span>`:`<span class="pchip closed">${esc(r.status||"")}</span>`;
+    const sav = r.saved_eur!=null ? `<span class="${r.saved_eur<0?"neg":""}">${eur(r.saved_eur)}${r.saving_ratio!=null?" ("+num(r.saving_ratio*100,1)+"%)":""}</span>` : (r.savings_basis==="utility_only"?"utility only":"—");
+    return `<tr><td>${esc(r.row_id)}</td><td>${chip}</td><td class="mono">${r.settled_price!=null?eur(r.settled_price):"—"}</td><td class="mono">${sav}</td></tr>`;
+  };
+  return `<div class="batch-out">
+    <div class="batch-totals">
+      <span class="bt-k">${d.n_rows} rows</span> · <span>${d.n_closed} closed</span> · <span>${d.n_escalated} escalated</span> · <span>${d.n_queued} to confirm</span> · <span>${d.n_terminations} cancels</span>
+      <span class="bt-tot">Saved <b class="mono">${eur(d.total_saved_eur)}</b> · avoided <b class="mono">${eur(d.total_cost_avoidance_eur)}</b></span>
+    </div>
+    <div class="batch-tbl-wrap"><table class="batch-tbl"><thead><tr><th>Row</th><th>Status</th><th>Settled</th><th>Saving (simulated)</th></tr></thead>
+      <tbody>${d.rows.map(row).join("")}</tbody></table></div>
+    <div class="batch-note">Every figure is method=<b>simulated</b> — a synthetic counterparty, not a real supplier. Savings are the settled price vs your baseline, bounded by the ±% you signed. This is $0 and never books a real-money "exact" number.</div>
+  </div>`;
+}
+
+// Parse the freeform batch text into ContractRow-shaped objects. Tolerant of blank lines; a row
+// that can't be understood is reported, never silently dropped or defaulted to a made-up price.
+function parseBatchRows(text){
+  const rows=[], errs=[];
+  (text||"").split("\n").forEach((line,i)=>{
+    const s=line.trim(); if(!s) return;
+    const parts=s.split(",").map(x=>x.trim());
+    const [supplier, instrRaw, pct, price, spend]=parts;
+    const instr=(instrRaw||"").toLowerCase();
+    if(instr!=="renew" && instr!=="cancel"){ errs.push(`line ${i+1}: instruction must be "renew" or "cancel"`); return; }
+    const row={ row_id:`b${i+1}`, supplier_name:supplier||null, instruction:instr };
+    if(instr==="renew"){
+      const p=parseFloat(pct);
+      if(!isFinite(p)||p<=0){ errs.push(`line ${i+1}: renew needs a ±% (e.g. 10)`); return; }
+      row.renew_pct=p;
+      if(price!==undefined && price!==""){ const bp=parseFloat(price); if(isFinite(bp)&&bp>0) row.baseline_price=bp; }
+      if(spend!==undefined && spend!==""){ const sp=parseFloat(spend); if(isFinite(sp)&&sp>0) row.annual_spend_eur=sp; }
+    }
+    rows.push(row);
+  });
+  return {rows, errs};
+}
+
+async function runBatch(){
+  const {rows, errs}=parseBatchRows(APP.batch.text);
+  if(errs.length){ APP.batch.error=errs.join(" · "); render(); return; }
+  if(!rows.length){ APP.batch.error="Enter at least one contract row."; render(); return; }
+  APP.batch.busy=true; APP.batch.error=null; render();
+  try{
+    const res=await post("/portfolio/simulate", {signed_by:(M.form.buyerSignature||"category manager"), buyer_name:(M.form.supplier||"[Buyer]"), rows});
+    APP.batch.result=res;
+    bookBatchSavings(res);   // land the simulated results in the buyer-owned ledger, method=simulated
+  }catch(e){ APP.batch.error=e.message||"the batch simulation failed"; }
+  finally{ APP.batch.busy=false; render(); }
+}
+
+// Persist each simulated close as a method="simulated" savings record so the portfolio rollup
+// counts it in its OWN tile — never blended with exact (human-resolved) money.
+function bookBatchSavings(d){
+  (d.rows||[]).forEach(r=>{
+    if(r.action==="negotiated" && r.saved_eur!=null){
+      saveSavingsRecord({
+        project_id:"sim-"+r.row_id+"-"+d.n_rows, date:new Date().toISOString().slice(0,10),
+        baseline:{current_price:r.baseline_price, annual_spend_eur:null},
+        settled_figures:r.settled_terms||{}, saved_eur:r.saved_eur, saving_pct:(r.saving_ratio!=null?r.saving_ratio*100:null),
+        method:"simulated", volume_basis:"baseline", closed_by:"simulated", resolved_by:"batch",
+      });
+    }
+  });
+}
+
 function bindPortfolio(){
   const nb=$("#newProjBtn"); if(nb) nb.onclick=newProject;
+  const bb=$("#batchBtn"); if(bb) bb.onclick=()=>{ APP.batch.open=!APP.batch.open; APP.batch.error=null; render(); };
+  const bt=$("#batchText"); if(bt) bt.oninput=()=>{ APP.batch.text=bt.value; };
+  const br=$("#batchRun"); if(br) br.onclick=runBatch;
+  const bs=$("#batchSample"); if(bs) bs.onclick=()=>{ APP.batch.text="Nordwerk GmbH, renew, 10, 272, 250000\nAcme Ltd, renew, 5, 11.50, 80000\nOld Vendor, cancel"; render(); };
   app.querySelectorAll(".prow").forEach(r=>{
     const open=()=>openProject(r.dataset.id);
     r.onclick=open;
