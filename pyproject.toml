@@ -117,6 +117,7 @@ target-version = "py311"
 select = ["E", "F", "I", "B", "UP"]
 
 [tool.ruff.lint.per-file-ignores]
-# dossier.py is a data module: realistic contract clauses + finding prose. Long string literals
-# there are content, not code smell — splitting them hurts readability more than it helps.
+# These are data modules: realistic contract clauses, checklist prose, and negotiation-position
+# text. Long string literals there are content, not code smell — splitting hurts readability.
 "src/negotiation_agent/dossier.py" = ["E501"]
+"src/negotiation_agent/checklist.py" = ["E501"]

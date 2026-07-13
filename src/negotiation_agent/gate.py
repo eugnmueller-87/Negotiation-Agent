@@ -129,6 +129,113 @@ DEFAULT_RULES: tuple[EscalationRule, ...] = (
         rationale="No breach-notification obligation undermines incident response and the "
         "GDPR 72-hour duty.",
     ),
+    # ── GDPR: transfer mechanism ──────────────────────────────────────────────────
+    EscalationRule(
+        rule_id="R-GDPR-NO-TRANSFER-MECHANISM",
+        category="gdpr",
+        # a transfer named as missing / no SCCs / no adequacy for an international transfer
+        pattern=r"\b(no|without|missing|absent)\b.{0,40}\b(transfer mechanism|standard contractual "
+        r"clauses|sccs?|adequacy)\b"
+        r"|\b(international|cross[- ]border|third[- ]country)\b.{0,40}\btransfer\b.{0,40}"
+        r"\b(no|without|missing)\b",
+        floor="high",
+        rationale="An international personal-data transfer with no named mechanism (adequacy/SCCs) "
+        "is a GDPR Chapter V gap — the buyer carries the transfer risk.",
+    ),
+    # ── Legal: IP assignment away from the buyer ─────────────────────────────────
+    EscalationRule(
+        rule_id="R-LEGAL-IP-ASSIGNMENT",
+        category="legal",
+        pattern=r"\bassign(s|ed|ment)?\b.{0,60}\b(intellectual property|ip rights?|deliverables?)\b"
+        r".{0,60}\b(to the supplier|to the vendor|to the provider)\b"
+        r"|\bsupplier (owns|retains|shall own)\b.{0,40}"
+        r"\b(intellectual property|ip|deliverables?)\b",
+        floor="high",
+        rationale="IP in deliverables the buyer paid for assigned to or retained by the supplier "
+        "is a material ownership loss — legal review required.",
+    ),
+    # ── Legal: no termination for convenience / locked in ────────────────────────
+    EscalationRule(
+        rule_id="R-LEGAL-NO-EXIT",
+        category="legal",
+        pattern=r"\bno right to terminate\b|\bmay not terminate\b|\bcannot terminate\b"
+        r"|\bno termination for convenience\b|\bterminate for convenience\b.{0,30}"
+        r"\b(no|not|excluded|prohibited)\b",
+        floor="high",
+        rationale="No termination-for-convenience right locks the buyer in for the term with no "
+        "exit — a negotiation lever legal should review.",
+    ),
+    # ── InfoSec: no audit / assurance right ──────────────────────────────────────
+    EscalationRule(
+        rule_id="R-INFOSEC-NO-AUDIT-RIGHT",
+        category="infosec",
+        pattern=r"\b(no|without|missing|denies?|denied)\b.{0,40}\baudit\b"
+        r"|\bno right to audit\b|\baudit\b.{0,20}\b(not permitted|excluded|prohibited)\b",
+        floor="medium",
+        rationale="No audit or assurance right leaves the buyer unable to verify the supplier's "
+        "security posture — flag for review.",
+    ),
+    # ── CoC: no code-of-conduct flow-down ────────────────────────────────────────
+    EscalationRule(
+        rule_id="R-COC-NO-FLOWDOWN",
+        category="coc",
+        pattern=r"\b(no|not|without|does not|is not)\b.{0,60}\b(code of conduct|supplier code)\b"
+        r"|\b(code of conduct|supplier code)\b.{0,40}"
+        r"\b(not require|no obligation|does not apply)\b",
+        floor="medium",
+        rationale="The supplier is not bound to the buyer Code of Conduct / no cascade to "
+        "sub-suppliers — no contractual basis for LkSG/CSDDD due-diligence expectations.",
+    ),
+    # ── CoC: no supply-chain / human-rights due diligence ────────────────────────
+    EscalationRule(
+        rule_id="R-COC-NO-SUPPLY-CHAIN-DD",
+        category="coc",
+        # human[- ]rights: a hyphen must not let the clause slip through on punctuation alone
+        pattern=r"\b(no|without|missing|absent)\b.{0,50}\b(human[- ]rights|lksg|csddd|"
+        r"supply[- ]chain due diligence|environmental due diligence)\b",
+        floor="high",
+        rationale="No human-rights / supply-chain due-diligence obligation undercuts the buyer's "
+        "LkSG/CSDDD statutory duties — legal/compliance review required.",
+    ),
+    # ── Commercial: uncapped price escalation / indexation ───────────────────────
+    EscalationRule(
+        rule_id="R-COMMERCIAL-UNCAPPED-ESCALATION",
+        category="commercial",
+        pattern=r"\b(no ceiling|no cap|uncapped|without (a )?(cap|ceiling|limit))\b.{0,60}"
+        r"\b(increase|escalat|indexation|cpi|price)\b"
+        r"|\b(increase|escalat|indexation|cpi)\b.{0,60}\b(no ceiling|no cap|uncapped|"
+        r"without (a )?(cap|ceiling|limit))\b",
+        floor="high",
+        rationale="Uncapped annual price escalation compounds over the term with no negotiation "
+        "trigger — a real budget risk and a lever to cap.",
+    ),
+    # ── Commercial: auto-renewal / evergreen trap ────────────────────────────────
+    EscalationRule(
+        rule_id="R-COMMERCIAL-AUTO-RENEWAL",
+        category="commercial",
+        pattern=r"\bauto[- ]?renew|\bautomatically renew|\bevergreen\b"
+        r"|\brenew(s|ed|al)?\b.{0,30}\bunless\b.{0,30}\b(notice|terminat)",
+        floor="high",
+        rationale="Auto-renewal — especially with a long non-renewal notice window — is an "
+        "evergreen lock-in trap the buyer should surface before signing.",
+    ),
+    # ── Commercial: minimum commitment above forecast ────────────────────────────
+    EscalationRule(
+        rule_id="R-COMMERCIAL-MINIMUM-COMMIT",
+        category="commercial",
+        # Require a BILLING cue (pay/invoice/charge/fee) between the minimum-commit and the
+        # "regardless" adverb — an SLA "uptime committed regardless of usage" has no billing verb,
+        # so it no longer false-fires. Verified against the adversarial red-team's SLA example.
+        pattern=r"\b(minimum|committed|take[- ]?or[- ]?pay)\b.{0,50}"
+        r"\b(volume|spend|purchase|units?|commit)\b.{0,80}"
+        r"\b(pay|payable|paid|invoiced?|billed|charged?|fees?|non[- ]?refundable)\b.{0,40}"
+        r"\b(regardless|whether or not|irrespective|even if|notwithstanding)\b"
+        r"|\bminimum\b.{0,30}\b(volume|spend|purchase|commit)\b.{0,60}"
+        r"\bregardless of (actual )?(usage|use|consumption)\b",
+        floor="medium",
+        rationale="A minimum commitment billed regardless of actual usage is pay-for-nothing risk "
+        "if demand lags the commit — right-size or add carry-forward.",
+    ),
 )
 
 
