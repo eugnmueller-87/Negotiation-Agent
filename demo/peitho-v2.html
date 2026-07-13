@@ -867,24 +867,11 @@ function intelKeyPoints(r){
   </div>`;
 }
 
+// The parts of the read result that AREN'T already in the key-points bullets: any extraction
+// warning, the supplier-risk row, and the proposed mandate adjustments. The commercial facts
+// (supplier/price/payment/…) live in intelKeyPoints only — no duplicate "commercial picture" grid.
 function intelResult(r){
-  const i=r.intelligence, ext=i.extraction;
-  const life=i.lifecycle||{};
-  const legal=i.legal||{};
-  const grounded=(g,fmt)=> g&&g.value!=null ? `<b>${esc(fmt?fmt(g.value):g.value)}</b> <span class="asr asr-${g.assurance}">${g.assurance}</span>` : `<span class="unk">not detected</span>`;
-  const terms=Object.fromEntries((ext.terms||[]).map(t=>[t.name,t.value]));
-  const pic = [
-    ["Supplier", ext.supplier_name?`<b>${esc(ext.supplier_name)}</b>`:`<span class="unk">—</span>`],
-    terms.price!=null
-      ? ["Unit price", `<b>${eur(terms.price)}</b>`]
-      : ["Total value", terms.total_value!=null?`<b>${eur(terms.total_value)}</b>`:`<span class="unk">—</span>`],
-    ["Payment", terms.payment_days!=null?`<b>net-${terms.payment_days}</b>`:`<span class="unk">—</span>`],
-    ["Volume", terms.volume_units!=null?`<b>${int(terms.volume_units)} units</b>`:`<span class="unk">—</span>`],
-    ["Expiry", grounded(life.expiration_date)],
-    ["NDA", grounded(legal.has_nda, v=>v==="true"?"in place ✓":"none")],
-    ["DPA", grounded(legal.has_dpa, v=>v==="true"?"in place ✓":"none")],
-    ["Units", i.units_of_measure&&i.units_of_measure.length?`<b>${i.units_of_measure.map(esc).join(", ")}</b>`:`<span class="unk">—</span>`],
-  ];
+  const i=r.intelligence;
   const brief=r.brief;
   const riskRow = brief ? `<div class="intel-risk">
     <span class="risk-lbl">Supplier risk (${brief.source==="sample"?"sample — not live":"Hades"})</span>
@@ -892,11 +879,6 @@ function intelResult(r){
   </div>` : (r.research_note?`<div class="intel-risk"><span class="risk-lbl">Supplier risk</span><span>${esc(r.research_note)}</span></div>`:"");
 
   const blocked = r.blocked ? `<div class="intel-block">⛔ ${esc(r.block_reason||"Supplier blocked — a human must clear this.")}</div>` : "";
-
-  // extraction warnings (truncation, no terms, no supplier) — surfaced, never silent
-  const warns=(i.warnings||[]).slice();
-  if(M.intel.priceNote) warns.push(M.intel.priceNote);  // total-vs-unit-price heads-up
-  const warnRow = warns.length ? `<div class="intel-warns">${warns.map(w=>`<div class="intel-warn">⚠ ${esc(w)}</div>`).join("")}</div>` : "";
 
   const adj = (r.adjustments||[]).map(a=>{
     const acc = M.intel.accepted[a.rule_id] !== false; // default accepted
@@ -909,19 +891,17 @@ function intelResult(r){
       </div>
     </div>`;
   }).join("");
+  const hasAdj = r.adjustments && r.adjustments.length;
 
   return `<div class="intel-out">
-    <div class="intel-sec-lbl">the commercial picture</div>
-    <div class="intel-grid">${pic.map(([k,v])=>`<div class="ip"><span class="ipk">${k}</span><span class="ipv">${v}</span></div>`).join("")}</div>
-    ${warnRow}
     ${riskRow}
     ${blocked}
-    ${(r.adjustments&&r.adjustments.length)?`<div class="intel-sec-lbl">proposed mandate adjustments <span class="sec-sub">the model found it · a rule moved it · you approve it</span></div>
+    ${hasAdj?`<div class="intel-sec-lbl">proposed mandate adjustments <span class="sec-sub">the model found it · a rule moved it · you approve it</span></div>
       <div class="adjs">${adj}</div>
       <div class="intel-apply">
         <button class="btn primary" id="intelApplyBtn" ${r.blocked?"disabled":""}>Apply to mandate ↓</button>
         <span class="meta">${r.blocked?"cleared by a human before this unlocks":"writes the shaped target/floor/terms into the form below"}</span>
-      </div>` : `<div class="intel-none">No mandate adjustments proposed — the contract looks clean. The extracted numbers are pre-filled below.</div>`}
+      </div>`:``}
   </div>`;
 }
 
