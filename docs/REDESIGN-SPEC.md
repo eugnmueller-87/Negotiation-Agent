@@ -1,5 +1,21 @@
 # Peitho Demo — Redesign Spec
 
+> **BUILD STATUS (2026-07):** Steps 1–3 are BUILT + deployed (commits d7ad465, cc83e45): the 4-step
+> stepper, the Understand/Mandate screen split, the unified card look, and the risk cockpit wired
+> into step 1 as "Scan for risks →". **Steps 4–6 are NOT built** — and the key finding is that they
+> are NOT frontend-only: the engine has the `adaptive`/`priors`/`outcomes` modules, but **no API
+> endpoints expose them** and the negotiate response doesn't carry the tactic. So each remaining step
+> needs backend work + tests, deferred to post-pause rather than rushed before the break:
+> - **Step 4 (adaptive tactic in the negotiation view):** enable `adaptive=True` in the negotiate
+>   path; thread `EngineDecision.tactic`/`tactic_rationale` through `wire.py` → `negotiate.py` → the
+>   turn response; render it. Needs a wire-contract change + tests.
+> - **Step 5 (learned prior in the mandate step):** a `/priors?category=…` endpoint over
+>   `OutcomeStore` + `learn_category_prior`; the UI (`sectionPrior()`, currently a stub) renders it.
+>   Needs the endpoint + an outcome-persistence hook so there's history to learn from.
+> - **Step 6 (Proof-of-Floor):** a replay endpoint that re-runs a transcript and asserts
+>   `utility ≥ reservation` each turn + emits the certificate; the `proofView()` (stubbed) renders it.
+>   This is also COMPETITIVE-EDGE.md build move #1 — do it there.
+
 *Written 2026-07 as the plan to execute after the pause. The current `demo/peitho-v2.html` grew
 organically across many features and now has redundant panels, an unclear flow, and a look that
 reads "dev demo" not "product". This spec fixes all four problems the redesign must solve: clutter,
