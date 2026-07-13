@@ -690,7 +690,8 @@
    the buyer message + reasoning. Every number on screen is server-computed. */
 
 const $ = (s,r=document)=>r.querySelector(s);
-const esc = s => String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+// escape &<>" AND the single quote — so an esc()'d value is safe in a single-quoted attribute too
+const esc = s => String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 
 // Same-origin when served from the backend; falls back to the deployed URL when
 // opened as a local file so the demo works either way.
@@ -1402,7 +1403,7 @@ function proofView(){
     const gg = t.move_brief ? briefSentence(t.move_brief) : "";
     const internal = t.internal ? `<span class="pl-int mono">θ ${t.internal.threshold.toFixed(3)}${t.internal.incoming_utility!=null?` · offer ${t.internal.incoming_utility.toFixed(3)}`:""}${floor!=null?` · floor ${floor.toFixed(3)}`:""}</span>` : "";
     return `<div class="pl-row">
-      <div class="pl-n mono">R${t.round_index}</div>
+      <div class="pl-n mono">R${Number(t.round_index)||0}</div>
       <div class="pl-body">
         <div class="pl-oc"><span class="mono" style="color:${oc}">${(t.outcome||"").toUpperCase()}</span>
           <span class="pl-reason mono">${esc(t.reason_tag||"")}</span></div>
@@ -1650,6 +1651,32 @@ function exportPortfolio(){
 // Restore a portfolio backup. Merges by project id / record project_id (never blind-overwrites a
 // project you're mid-negotiation on unless the backup is genuinely newer is out of scope — this is
 // a straightforward replace-the-store restore, guarded by a confirm).
+// Rebuild an imported project into the known shape — NEVER spread arbitrary message objects. An
+// imported backup is untrusted (Export/Import is meant to move backups between machines, so a
+// crafted file is a real vector): thread/turns entries are rebuilt field-by-field with primitive
+// coercion and unknown keys dropped, so a poisoned round/text/field can't ride into a render sink.
+function sanitizeImportedProject(p){
+  const f=freshProject();
+  p=p||{};
+  const proj={...f,...p,form:{...f.form,...(p.form||{})}};
+  proj.touched=new Set(Array.isArray(p.touched)?p.touched:[]);
+  proj.busy=false;
+  proj.resolve={...f.resolve,...(p.resolve||{}),busy:false};
+  proj.intel={...f.intel,...(p.intel||{}),busy:false};
+  proj.cockpit={...f.cockpit,...(p.cockpit||{}),busy:false,asking:false};
+  // thread: only from/text/round/turn survive, each coerced to a safe primitive
+  proj.thread=(Array.isArray(p.thread)?p.thread:[]).map(m=>({
+    from: (m&&m.from)==="buyer"?"buyer":"supplier",
+    text: String((m&&m.text)??""),
+    round: Number(m&&m.round)||0,
+    turn: (m&&typeof m.turn==="object")?m.turn:undefined,
+  }));
+  // turns: coerce the numeric fields the ledger renders
+  proj.turns=(Array.isArray(p.turns)?p.turns:[]).map(t=>({...(t||{}), round_index:Number(t&&t.round_index)||0}));
+  proj.transcript=Array.isArray(p.transcript)?p.transcript:[];
+  return proj;
+}
+
 function importPortfolio(file){
   const reader=new FileReader();
   reader.onerror=()=>{ APP.batch.error="couldn't read that file"; render(); };
@@ -1658,7 +1685,7 @@ function importPortfolio(file){
       const d=JSON.parse(String(reader.result||""));
       if(d._format!=="peitho.portfolio.v1" || !Array.isArray(d.projects)) throw new Error("not a Peitho portfolio backup");
       if(!confirm("Import this backup? It replaces your current portfolio ("+PROJECTS.length+" project"+(PROJECTS.length!==1?"s":"")+") in this browser.")) return;
-      PROJECTS = d.projects.map(p=>{ const f=freshProject(); const proj={...f,...p,form:{...f.form,...(p.form||{})}}; proj.touched=new Set(Array.isArray(p.touched)?p.touched:[]); proj.busy=false; proj.resolve={...f.resolve,...(p.resolve||{}),busy:false}; proj.intel={...f.intel,...(p.intel||{}),busy:false}; proj.cockpit={...f.cockpit,...(p.cockpit||{}),busy:false,asking:false}; return proj; });
+      PROJECTS = d.projects.map(sanitizeImportedProject);
       M = PROJECTS.length ? PROJECTS[PROJECTS.length-1] : freshProject();
       if(!PROJECTS.includes(M)) PROJECTS.push(M);
       saveProjects();
@@ -1821,7 +1848,7 @@ function archiveDetail(a){
   const ledger = (a.rounds||[]).map(t=>{
     const oc={accept:"var(--good)",counter:"var(--buyer)",escalate:"var(--warn)"}[t.outcome]||"var(--ink-3)";
     const nums=Object.entries(t.approved_numbers||{}).map(([k,v])=>fmtTerm(k,v)).join(" · ")||"—";
-    return `<div class="pl-row"><div class="pl-n mono">R${t.round}</div><div class="pl-body">
+    return `<div class="pl-row"><div class="pl-n mono">R${Number(t.round)||0}</div><div class="pl-body">
       <div class="pl-oc"><span class="mono" style="color:${oc}">${(t.outcome||"").toUpperCase()}</span><span class="pl-reason mono">${esc(t.reason||"")}</span></div>
       <div class="pl-nums">figures released: <span class="mono">${esc(nums)}</span></div></div></div>`;
   }).join("");
@@ -2190,7 +2217,7 @@ function riskCard(f){
   return `<div class="rcard sev-${f.severity}${sel?" sel":""}${f.verified?"":" unver"}" data-card="${esc(f.anchor_id||f.title)}"${f.verified?` data-jump="${esc(f.anchor_id)}"`:""}>
     <div class="rcard-top">
       <span class="rsev">${esc(f.severity)}</span>
-      <span class="rcat">${CAT_LABEL[f.category]||f.category}</span>
+      <span class="rcat">${esc(CAT_LABEL[f.category]||f.category)}</span>
       <span class="rcard-sp"></span>
       ${verify}
     </div>
@@ -2424,7 +2451,7 @@ function renderMsg(m, side, compact){
   return `<div class="msg ${cls}">
     <div class="msg-head">
       <div class="avatar ${cls}">${av}</div>
-      <div><div class="msg-from">${from}</div><div class="msg-meta">${m.from==="buyer"?"to supplier":"to buyer"} · round ${m.round}</div></div>
+      <div><div class="msg-from">${from}</div><div class="msg-meta">${m.from==="buyer"?"to supplier":"to buyer"} · round ${Number(m.round)||0}</div></div>
     </div>
     <div class="msg-body">${esc(m.text)}</div>
     ${m.from==="buyer"?`<div class="msg-sig">— drafted by Peitho on behalf of the category manager</div>`:""}
@@ -2462,7 +2489,7 @@ function reasonDrawer(turn){
   const intl = turn.internal;
   const decisionSec = intl ? `<div class="dsec"><div class="lab">engine internals · buyer-private</div>
     <div class="drow"><span>outcome</span><span class="mono" style="color:${oc}">${turn.outcome.toUpperCase()}</span></div>
-    <div class="drow"><span>round</span><span class="mono">${turn.round_index} / 6</span></div>
+    <div class="drow"><span>round</span><span class="mono">${Number(turn.round_index)||0} / 6</span></div>
     <div class="drow" title="Boulware: reservation + span·(1−(t/T)^β)"><span>threshold</span><span class="mono">${intl.threshold.toFixed(3)}</span></div>
     ${intl.incoming_utility!=null?`<div class="drow"><span>incoming utility</span><span class="mono">${intl.incoming_utility.toFixed(3)}</span></div>`:""}
     ${intl.counter_utility!=null?`<div class="drow"><span>counter utility</span><span class="mono">${intl.counter_utility.toFixed(3)}</span></div>`:""}
@@ -2541,7 +2568,7 @@ function guardBlock(guard){
 function dealSidebar(){
   const last = [...M.turns].reverse().find(t=>t.internal);
   return `<div class="card"><h3><svg width="13" height="13"><use href="#i-scale"/></svg> live deal state</h3>
-    ${last ? `<div class="drow"><span>round</span><span class="mono">${last.round_index} / 6</span></div>
+    ${last ? `<div class="drow"><span>round</span><span class="mono">${Number(last.round_index)||0} / 6</span></div>
       <div class="drow"><span>threshold</span><span class="mono">${last.internal.threshold.toFixed(3)}</span></div>
       ${last.internal.incoming_utility!=null?`<div class="drow"><span>supplier offer utility</span><span class="mono">${last.internal.incoming_utility.toFixed(3)}</span></div>`:""}
       <div class="drow"><span>reservation floor</span><span class="mono">${last.internal.reservation_utility.toFixed(3)}</span></div>`
@@ -2727,7 +2754,7 @@ async function resolveNegotiation(action){
   }
   // approve — retry once with the override if the offer is below the floor
   try{
-    let res;
+    let res, overrode=false;
     try{
       res = await post("/negotiate/resolve", body);
     }catch(e){
@@ -2735,11 +2762,14 @@ async function resolveNegotiation(action){
         if(!confirm("The supplier's offer is BELOW your walk-away floor. The engine never crosses it — approving is your explicit override. Proceed?")){
           M.resolve.busy=false; render(); return;
         }
+        overrode=true;  // WE hit the floor 409 and confirmed — the authoritative override signal
         res = await post("/negotiate/resolve", {...body, override_below_floor:true});
       } else { throw e; }
     }
+    // below_floor is derived from OUR override, not the server echo — the server keeps the private
+    // utility gated (it's a floor oracle); the client already knows it overrode.
     M.resolve.done={action:"approve", resolved_by:actor, accepted:res.accepted_numbers,
-      settled_utility:res.settled_utility, below_floor:res.below_floor, message:res.message};
+      settled_utility:res.settled_utility, below_floor:overrode||!!res.below_floor, message:res.message};
     M.resolve.savingsRecord = bookSavings(res.accepted_numbers, "human");
     M.status="closed";
   }catch(e){ M.resolve.error=e.message||"couldn't approve the offer"; }

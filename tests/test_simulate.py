@@ -88,13 +88,24 @@ def test_no_baseline_is_utility_only(client):
     assert row["saving_ratio"] is None and row["saved_eur"] is None
 
 
-def test_n_cap_413s_before_running(client, monkeypatch):
-    monkeypatch.setattr(api, "_PORTFOLIO_MAX_ROWS", 3)
+def test_row_cap_rejects_an_over_length_batch(client):
+    # the row cap is enforced at the pydantic boundary (Field max_length = _PORTFOLIO_MAX_ROWS);
+    # an over-length list is a 422 validation error, never run.
     rows = [{"row_id": f"r{i}", "instruction": "renew", "renew_pct": 5.0, "baseline_price": 100.0}
-            for i in range(4)]
+            for i in range(api._PORTFOLIO_MAX_ROWS + 1)]
+    r = _sim(client, rows)
+    assert r.status_code == 422
+
+
+def test_oversized_body_413s_before_parse(client, monkeypatch):
+    # the RAW-BYTE cap is the memory-amplification defense: it fires on body size BEFORE json.loads
+    # / pydantic ever run, so a huge body can't materialise a multi-GB list first.
+    monkeypatch.setattr(api, "_SIMULATE_MAX_BYTES", 2000)
+    rows = [{"row_id": f"r{i}", "instruction": "renew", "renew_pct": 5.0, "baseline_price": 100.0}
+            for i in range(50)]  # well over 2000 bytes of JSON
     r = _sim(client, rows)
     assert r.status_code == 413
-    assert r.json()["error"]["code"] == "too_many_rows"
+    assert r.json()["error"]["code"] == "batch_too_large"
 
 
 def test_batch_is_deterministic(client):
@@ -109,3 +120,12 @@ def test_batch_is_deterministic(client):
 def test_cancel_rejects_renew_pct_at_the_boundary(client):
     r = _sim(client, [{"row_id": "r", "instruction": "cancel", "renew_pct": 5.0}])
     assert r.status_code == 422  # the ContractRow validator rejects the mismatched pairing
+
+
+def test_renew_row_rejects_contract_text(client):
+    # contract_text is read only on the cancel path — a renew row carrying it is a 422 (strictness)
+    r = _sim(client, [{
+        "row_id": "r", "instruction": "renew", "renew_pct": 5.0,
+        "baseline_price": 100.0, "contract_text": "x" * 100,
+    }])
+    assert r.status_code == 422

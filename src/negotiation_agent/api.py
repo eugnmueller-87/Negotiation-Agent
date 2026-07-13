@@ -22,6 +22,7 @@ from __future__ import annotations
 import hmac
 import logging
 import os
+import threading
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
@@ -34,7 +35,7 @@ try:
     from fastapi.concurrency import run_in_threadpool
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import FileResponse, JSONResponse
-    from pydantic import BaseModel, Field
+    from pydantic import BaseModel, Field, model_validator
 except ImportError as e:  # pragma: no cover - exercised only without the extra
     raise ImportError(
         "The HTTP API needs the 'web' extra. Install it with: pip install -e '.[web]'"
@@ -145,6 +146,9 @@ _rate_hits: dict[str, list[float]] = {}
 _DRAFT_BUDGET = int(os.getenv("PEITHO_DRAFT_BUDGET", "120"))
 _DRAFT_BUDGET_WINDOW = int(os.getenv("PEITHO_DRAFT_BUDGET_WINDOW", "3600"))
 _draft_hits: list[float] = []
+# Handlers run on threadpool threads; the check-then-append below must be atomic or two concurrent
+# full-mode drafters can both read len == budget-1 and both append, overshooting the ceiling.
+_draft_lock = threading.Lock()
 
 
 def _draft_budget_ok() -> bool:
@@ -154,11 +158,12 @@ def _draft_budget_ok() -> bool:
         return True  # cap disabled
     now = time.time()
     cutoff = now - _DRAFT_BUDGET_WINDOW
-    _draft_hits[:] = [t for t in _draft_hits if t > cutoff]
-    if len(_draft_hits) >= _DRAFT_BUDGET:
-        return False
-    _draft_hits.append(now)
-    return True
+    with _draft_lock:  # atomic filter/check/append — no overshoot under concurrency
+        _draft_hits[:] = [t for t in _draft_hits if t > cutoff]
+        if len(_draft_hits) >= _DRAFT_BUDGET:
+            return False
+        _draft_hits.append(now)
+        return True
 
 
 def _drafter() -> DraftClient:
@@ -776,6 +781,12 @@ def negotiate_step(req: StepRequest, request: Request) -> JSONResponse:
             code, "the mandate could not be verified", 400 if code == "mandate_tampered" else 410
         )
 
+    # The top-level session_id must match the one bound INSIDE the signed mandate. The HMAC already
+    # blocks cross-session replay (it signs the inner session_id), so this is defense-in-depth — but
+    # a wire field that reads as a session check must actually enforce it, not be dead surface.
+    if req.session_id != req.signed_mandate.session_id:
+        return _err("session_mismatch", "session_id does not match the signed mandate", 400)
+
     try:
         engine, envelope = build_engine(mandate)
     except (ValueError, KeyError) as e:
@@ -909,6 +920,12 @@ def negotiate_resolve(req: ResolveRequest, request: Request) -> JSONResponse:
             code, "the mandate could not be verified", 400 if code == "mandate_tampered" else 410
         )
 
+    # The top-level session_id must match the one bound INSIDE the signed mandate. The HMAC already
+    # blocks cross-session replay (it signs the inner session_id), so this is defense-in-depth — but
+    # a wire field that reads as a session check must actually enforce it, not be dead surface.
+    if req.session_id != req.signed_mandate.session_id:
+        return _err("session_mismatch", "session_id does not match the signed mandate", 400)
+
     try:
         engine, envelope = build_engine(mandate)
     except (ValueError, KeyError) as e:
@@ -989,13 +1006,18 @@ def negotiate_resolve(req: ResolveRequest, request: Request) -> JSONResponse:
         return _err("acceptance_guard_failed", "could not draft a clean acceptance", 500)
 
     audit = GuardAudit(released_by="human", resolved_by=req.resolved_by, attempts=[])
+    # settled_utility is a buyer-private figure, and below_floor is a boolean oracle on the
+    # reservation floor. Echo them only under the god-view gate — the same rule the /step path
+    # applies to InternalState. The override was already enforced above from the server-side value;
+    # an ungated caller gets neither the utility nor the floor-proximity signal (hardening #4).
+    reveal = _godview(request)
     resp = ResolveResponse(
         action="approve",
         resolved_by=req.resolved_by,
         accepted_numbers=accepted,
         message=message,
-        settled_utility=settled_utility,
-        below_floor=below_floor,
+        settled_utility=settled_utility if reveal else None,
+        below_floor=below_floor if reveal else False,
         guard=audit,
     )
     return JSONResponse(content=resp.model_dump(mode="json"))
@@ -1004,15 +1026,40 @@ def negotiate_resolve(req: ResolveRequest, request: Request) -> JSONResponse:
 # --------------------------------------------------------------------------- #
 # Phase 3 — POST /portfolio/simulate: $0 batch negotiation against a SIMULATED
 # counterparty. Deterministic engine + ParametricSupplier only — no LLM call in
-# ANY mode, so it is not gated by _full_mode. Cost control is CPU-shaped:
-# an N-cap per request plus its own per-IP rate bucket.
+# ANY mode, so it is not gated by _full_mode. Cost control is CPU-shaped: a raw
+# body-byte cap + a row cap + a per-IP rate bucket + a process-wide concurrency
+# semaphore (a per-IP limit alone can't stop an IP-rotating attacker).
 # --------------------------------------------------------------------------- #
 
 _PORTFOLIO_MAX_ROWS = int(os.getenv("PEITHO_PORTFOLIO_MAX_ROWS", "200"))
 _SIMULATE_RATE_PER_MIN = int(os.getenv("PEITHO_SIMULATE_RATE_PER_MIN", "4"))
+# Hard ceiling on the RAW request BYTES for /portfolio/simulate. The row-count cap alone can't
+# bound the parse: a JSON array of 10^6 tiny objects materialises a multi-GB Python list before
+# pydantic's list max_length is ever consulted. So we bounded-read the body FIRST and 413 on
+# overflow, before json.loads/pydantic ever see it (mirrors the file-upload route). ~8 MB covers
+# 200 rows of real data with headroom; a cancel batch with per-row contract_text stays under it.
+_SIMULATE_MAX_BYTES = int(os.getenv("PEITHO_SIMULATE_MAX_BYTES", str(8 * 1024 * 1024)))
+# Process-wide concurrency ceiling on batch CPU: one accepted request folds up to N_rows × rounds
+# real engine decisions on the single worker. The per-IP rate limit doesn't stop an IP-rotating
+# attacker, so a global semaphore bounds TOTAL simultaneous batch CPU — mirrors _DRAFT_BUDGET for
+# LLM spend. 503 when saturated. Set via env; small by default (single worker).
+_SIMULATE_MAX_CONCURRENT = int(os.getenv("PEITHO_SIMULATE_MAX_CONCURRENT", "2"))
 # Same schedule the tail-spend fleet demo runs (scripts/gen_tailspend_demo.py).
 _SIM_MAX_ROUNDS = 8
 _SIM_BETA = 4.0
+
+# The batch-concurrency semaphore, created lazily on first use so it binds to the running event
+# loop (constructing it at import time can bind to the wrong loop under some test/ASGI setups).
+_simulate_semaphore: object = None
+
+
+def _simulate_sem():  # type: ignore[no-untyped-def]
+    global _simulate_semaphore
+    if _simulate_semaphore is None:
+        import asyncio
+
+        _simulate_semaphore = asyncio.Semaphore(max(1, _SIMULATE_MAX_CONCURRENT))
+    return _simulate_semaphore
 
 
 def _mix(seed: int) -> float:
@@ -1030,15 +1077,25 @@ class BatchRow(ContractRow):
     """A ContractRow plus the raw contract text (cancel rows only, for the
     termination clock). Capped per row so a batch can't smuggle a giant body."""
 
-    contract_text: str | None = Field(default=None, max_length=200_000)
+    contract_text: str | None = Field(default=None, max_length=64_000)
+
+    @model_validator(mode="after")
+    def _no_text_on_renew(self) -> BatchRow:
+        # contract_text is read ONLY on the cancel path (_terminate_row). Rejecting it on a renew
+        # row is boundary-strictness (mirrors ContractRow's instruction pairing) and stops a renew
+        # batch from carrying dead, size-charged text.
+        if self.instruction == "renew" and self.contract_text is not None:
+            raise ValueError(f"row {self.row_id!r}: 'renew' must not carry contract_text")
+        return self
 
 
 class SimulateRequest(BaseModel):
     signed_by: str = Field(min_length=1, max_length=200)
     buyer_name: str = Field(default="[Buyer]", max_length=200)
-    # A STATIC max bounds the whole-body pydantic parse before the env-tuned runtime cap
-    # runs (FIX 2) — otherwise a 10k-row body is fully parsed before the 413 fires.
-    rows: list[BatchRow] = Field(min_length=1, max_length=1000)
+    # The static list max matches the runtime row cap. This alone does NOT bound the raw-parse
+    # bytes (a huge JSON array is materialised before pydantic checks list length) — the
+    # /portfolio/simulate handler bounded-reads the body BYTES first (see _SIMULATE_MAX_BYTES).
+    rows: list[BatchRow] = Field(min_length=1, max_length=_PORTFOLIO_MAX_ROWS)
 
 
 class SimulatedRowResult(BaseModel):
@@ -1259,7 +1316,7 @@ def _simulate_batch(req: SimulateRequest) -> dict[str, object]:
 
 
 @app.post("/portfolio/simulate", response_model=None)
-async def portfolio_simulate(req: SimulateRequest, request: Request) -> JSONResponse:
+async def portfolio_simulate(request: Request) -> JSONResponse:
     """Negotiate a whole contract portfolio against a SIMULATED counterparty. $0.
 
     Per row: compile the instruction into a baseline-scaled mandate
@@ -1270,17 +1327,45 @@ async def portfolio_simulate(req: SimulateRequest, request: Request) -> JSONResp
     counterparty never earns "exact". No LLM call exists on this path in any
     mode, so it is not gated by _full_mode; it is N-capped and rate-limited
     because the cost here is CPU, not tokens.
+
+    SECURITY: takes ``request`` (not a parsed body param) so the rate gate runs BEFORE any parse,
+    then bounded-reads the raw body bytes with a hard ceiling and 413s on overflow — a row-COUNT
+    cap can't bound a huge JSON array that json.loads materialises before pydantic sees it. A
+    process-wide semaphore then bounds total simultaneous batch CPU on the single worker.
     """
     gate = _rate_gate(request, "simulate", limit=_SIMULATE_RATE_PER_MIN)
     if gate is not None:
         return gate
-    if len(req.rows) > _PORTFOLIO_MAX_ROWS:
-        return _err(
-            "too_many_rows",
-            f"portfolio batch is capped at {_PORTFOLIO_MAX_ROWS} rows per request",
-            413,
-        )
-    payload = await run_in_threadpool(_simulate_batch, req)
+
+    # Bounded body read — count what actually arrives, never trust Content-Length; 413 on overflow
+    # BEFORE json.loads/pydantic ever run (the memory-amplification defense).
+    total = 0
+    chunks: list[bytes] = []
+    async for chunk in request.stream():
+        total += len(chunk)
+        if total > _SIMULATE_MAX_BYTES:
+            return _err(
+                "batch_too_large",
+                f"the simulate batch body exceeds {_SIMULATE_MAX_BYTES // (1024 * 1024)} MB",
+                413,
+            )
+        chunks.append(chunk)
+    body = b"".join(chunks)
+    if not body:
+        return _err("empty_body", "no batch was posted", 400)
+    try:
+        req = SimulateRequest.model_validate_json(body)
+    except ValueError as e:
+        return _err("bad_batch", f"invalid batch: {e}", 422)
+
+    # Bound TOTAL concurrent batch CPU across all callers (per-IP limit can't stop rotated IPs).
+    # Non-blocking acquire: 503 immediately when saturated rather than queueing work behind a
+    # pinned CPU (which would just grow latency for everyone).
+    sem = _simulate_sem()
+    if sem.locked():
+        return _err("busy", "batch capacity is saturated — retry shortly", 503)
+    async with sem:
+        payload = await run_in_threadpool(_simulate_batch, req)
     return JSONResponse(content=payload)
 
 

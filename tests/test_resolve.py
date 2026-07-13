@@ -137,13 +137,35 @@ def test_below_floor_approve_requires_override(client):
     assert r.json()["error"]["code"] == "below_floor"
 
 
-def test_below_floor_flag_marks_the_record(client):
+def test_below_floor_utility_is_gated_behind_god_view(client):
+    # settled_utility is buyer-private and below_floor is a floor oracle: an UNGATED caller gets
+    # neither (the server still enforces the override from its private value — that's tested above).
     signed = _signed(client)
-    r = _resolve(client, signed, override_below_floor=True)
+    body = _resolve(client, signed, override_below_floor=True).json()
+    assert body["settled_utility"] is None
+    assert body["below_floor"] is False
+
+
+def test_god_view_reveals_the_below_floor_utility(client, monkeypatch):
+    # WITH the god-view token, the buyer-private figure is revealed (the same rule the /step path
+    # applies to InternalState) — proving the gate, not a permanent suppression.
+    monkeypatch.setenv("PEITHO_GODVIEW_TOKEN", "gv-secret")
+    signed = _signed(client)
+    r = client.post(
+        "/negotiate/resolve",
+        json={
+            "signed_mandate": signed,
+            "transcript": _ESCALATING_TRANSCRIPT,
+            "session_id": "s1",
+            "action": "approve",
+            "resolved_by": "e.mueller",
+            "override_below_floor": True,
+        },
+        headers={"X-Peitho-Godview": "gv-secret"},
+    )
     body = r.json()
     assert body["below_floor"] is True
-    assert body["settled_utility"] is not None
-    assert body["settled_utility"] < 0.60  # below the mandate reservation
+    assert body["settled_utility"] is not None and body["settled_utility"] < 0.60
 
 
 def test_takeover_hands_off_to_the_human(client):
@@ -202,3 +224,22 @@ def test_resolve_does_not_write_to_outcome_store(client, monkeypatch):
     r = _resolve(client, signed, override_below_floor=True)
     assert r.status_code == 200
     assert calls == []  # nothing written
+
+
+def test_resolve_rejects_session_id_not_matching_the_mandate(client):
+    # a top-level session_id that differs from the signed mandate's is rejected (the field must
+    # enforce a check, not be dead surface). The HMAC already blocks real replay; this is d-i-d.
+    signed = _signed(client)  # bound to session "s1"
+    r = client.post(
+        "/negotiate/resolve",
+        json={
+            "signed_mandate": signed,
+            "transcript": _ESCALATING_TRANSCRIPT,
+            "session_id": "s-DIFFERENT",
+            "action": "approve",
+            "resolved_by": "e.mueller",
+            "override_below_floor": True,
+        },
+    )
+    assert r.status_code == 400
+    assert r.json()["error"]["code"] == "session_mismatch"
