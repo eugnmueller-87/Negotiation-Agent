@@ -27,6 +27,7 @@ confidentiality line of the whole system.
 from __future__ import annotations
 
 import enum
+import math
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -210,6 +211,20 @@ class DealEngine:
                 state,
             )
 
+        # --- No-content guard: an offer stating NO negotiable term would inherit the buyer's whole
+        #     standing counter via _merge and score at the buyer's own package — a blank or dropped
+        #     supplier message must never silently CLOSE the deal at the buyer's terms. Treat it as
+        #     no offer: escalate rather than accept a deal the supplier never made. ---
+        known_terms = set(incoming.terms) & set(self.envelope.term_map)
+        if not known_terms:
+            return self._escalate(t, theta, reason="empty_offer"), state
+
+        # --- Finiteness guard: a garbage-parsed value (inf/-inf/NaN) clamps to a fake extreme in
+        #     the value function and can masquerade as a perfect concession. Reject non-finite input
+        #     at the boundary rather than let a fabricated number score as a real one. ---
+        if any(not math.isfinite(v) for v in incoming.terms.values()):
+            return self._escalate(t, theta, reason="non_finite_offer"), state
+
         # --- Merge partial offers: unaddressed terms inherit the standing
         #     counter. Envelope.utility raises on missing terms, so this must
         #     happen before scoring. ---
@@ -243,6 +258,9 @@ class DealEngine:
         # --- Accept rule: single clause. Counter utility is always >= theta by
         #     construction, so an "accept if incoming >= my counter" clause is
         #     provably redundant. ---
+        # NOTE: this comparison is load-bearing for floor safety. `u_in >= theta` is FALSE when
+        # u_in is NaN, so a poisoned utility escalates rather than accepting. Do NOT refactor to
+        # `not (u_in < theta)` — that inverts the NaN case into a spurious accept (a floor breach).
         if u_in >= theta:
             approved = {n: merged.terms[n] for n in self.envelope.term_map}
             decision = EngineDecision(

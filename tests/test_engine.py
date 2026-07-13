@@ -191,3 +191,32 @@ def test_adaptive_is_deterministic(simple_envelope):
     d1, s1 = eng.decide(state, offer)
     d2, s2 = eng.decide(state, offer)
     assert d1.model_dump() == d2.model_dump() and s1.model_dump() == s2.model_dump()
+
+
+# ── ingestion guards (from the adversarial floor-safety review) ──────────────────
+def test_blank_offer_does_not_falsely_close_the_deal(simple_envelope):
+    # a supplier message with NO negotiable terms must not inherit the buyer's counter and ACCEPT —
+    # that would silently close at the buyer's own package on an empty/dropped message
+    eng = _engine(simple_envelope)
+    state = NegotiationState()
+    _, state = eng.decide(state, None)  # sets the standing counter
+    d, _ = eng.decide(state, Offer(terms={}))
+    assert d.outcome is Outcome.ESCALATE and d.reason == "empty_offer"
+
+
+def test_non_finite_offer_value_is_rejected(simple_envelope):
+    # a garbage-parsed inf/NaN must not clamp to a fake perfect concession and ACCEPT
+    eng = _engine(simple_envelope)
+    state = NegotiationState()
+    _, state = eng.decide(state, None)
+    d, _ = eng.decide(state, Offer(terms={"price": float("-inf")}))
+    assert d.outcome is Outcome.ESCALATE and d.reason == "non_finite_offer"
+
+
+def test_nan_utility_never_accepts(simple_envelope):
+    # the load-bearing NaN fail-safe: a NaN term must escalate, never accept (floor safety)
+    eng = _engine(simple_envelope)
+    state = NegotiationState()
+    _, state = eng.decide(state, None)
+    d, _ = eng.decide(state, Offer(terms={"price": float("nan")}))
+    assert d.outcome is Outcome.ESCALATE

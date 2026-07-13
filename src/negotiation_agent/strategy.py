@@ -85,7 +85,9 @@ def adapt_threshold(
         adjusted = base_threshold
 
     # HARD invariant: the adjusted threshold never leaves the mandate band. The engine's floor
-    # holds.
+    # holds. NOTE: load-bearing for floor safety, including the NaN case — max(reservation,
+    # min(target, NaN)) returns `target` (CPython min/max return the first arg on a NaN compare),
+    # so a poisoned `adjusted` firms UP to target, never below reservation. Keep this exact form.
     return max(reservation, min(target, adjusted))
 
 
