@@ -124,6 +124,16 @@ _TOTAL_VALUE_RE = re.compile(
     r"[^.\n]{0,20}?\b(?:total|in total|per annum|annually|for the (?:initial )?term)\b",
     re.I,
 )
+# A liability/penalty/indemnity CAP figure ("total liability shall not exceed EUR 50,000") is
+# neither a unit price nor a contract value — it's a legal cap. _TOTAL_VALUE_RE already excludes
+# it; the plausibility-ceiling relabel below must too, or a large cap gets mislabeled total_value.
+# This matches a liability cue within a bounded window before a currency figure, so we can
+# recognise the cap figure and refuse to treat it as price OR total_value. Bounded window = linear.
+_LIABILITY_CAP_RE = re.compile(
+    r"\b(?:liabilit(?:y|ies)|indemnit(?:y|ies)|penalt(?:y|ies)|damages|liquidated)\b"
+    r"[^.\n]{0,40}?(?:€|eur|usd|\$)\s*(" + _NUM + r")",
+    re.I,
+)
 # the (?<![\d.,]) stops a match from starting mid-token, so "1.2.3 units" is rejected
 # whole (no spurious "2.3") rather than backtracking into the malformed tail. It is ALSO the
 # ReDoS guard: without it an unanchored _NUM re-tries its greedy consume-then-fail at every
@@ -253,13 +263,44 @@ class RegexContractExtractor:
         # match is the same amount as the total (i.e. the total IS the only money in the document).
         total = find(_TOTAL_VALUE_RE)
         price = find(_PRICE_RE)
+
+        # A per-unit price above this is almost never a unit price — it's a total/annual/lump-sum
+        # fee the _TOTAL_VALUE_RE phrasing missed (e.g. "annual subscription fee is EUR 400,000").
+        # Labeling it `price` produces a nonsense per-unit target/floor and, downstream, a mandate
+        # the engine can't negotiate. When _PRICE_RE grabs a figure this large and no explicit total
+        # was found, treat it AS the total, never an implausible `price`. Real per-unit procurement
+        # prices are small (cents to low thousands); machinery is the rare high end.
+        _MAX_PLAUSIBLE_UNIT_PRICE = 10_000.0
+        price_implausible = price is not None and price[0] > _MAX_PLAUSIBLE_UNIT_PRICE
+        # ...but a large figure in a LIABILITY/PENALTY context is a cap, not a contract value.
+        # "Total liability shall not exceed EUR 50,000" must NOT become a total_value. The total
+        # regex already excludes it; the plausibility relabel must respect the same boundary or it
+        # re-introduces the exact mislabel. If the price figure is the amount a liability cue caps,
+        # drop it — it's neither a unit price nor a contract value.
+        cap = _num(_LIABILITY_CAP_RE.search(text)) if price is not None else None
+        price_is_liability_cap = price is not None and cap is not None and cap == price[0]
+
         if total is not None:
             terms.append(
                 ExtractedTerm(name="total_value", value=total[0], quote=total[1], confidence=0.8)
             )
-        # keep `price` only if it's a DIFFERENT figure from the total (a real per-unit price
-        # alongside the total) — otherwise the single figure is the total, not a unit price.
-        if price is not None and (total is None or price[0] != total[0]):
+        elif price_implausible and not price_is_liability_cap:
+            # No labelled total, but the only money figure is too large to be per-unit — it's the
+            # total. Emit it as total_value (lower confidence: phrasing wasn't an explicit total)
+            # and warn. This is what stops "EUR 194,920" showing up as "194.920 € per unit".
+            terms.append(
+                ExtractedTerm(name="total_value", value=price[0], quote=price[1], confidence=0.5)
+            )
+
+        # keep `price` only if it's a plausible per-unit figure AND distinct from the total — a real
+        # per-unit price alongside the total. An implausibly large figure is never a `price`, and a
+        # liability-cap figure is never a price either.
+        if (
+            price is not None
+            and not price_implausible
+            and not price_is_liability_cap
+            and (total is None or price[0] != total[0])
+        ):
             terms.append(
                 ExtractedTerm(name="price", value=price[0], quote=price[1], confidence=0.8)
             )
@@ -277,6 +318,12 @@ class RegexContractExtractor:
                 break
 
         warnings: list[str] = []
+        if total is None and price_implausible:
+            warnings.append(
+                f"The only monetary figure found ({price[0]:,.0f}) is too large to be a per-unit "
+                f"price — it was read as a total/annual value, not a unit price. Set a per-unit "
+                f"target and floor yourself, or confirm the unit price."
+            )
         if truncated:
             warnings.append(
                 f"Document text exceeded {_MAX_CONTRACT_CHARS // 1000} KB and was truncated for "

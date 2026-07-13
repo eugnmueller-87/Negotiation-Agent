@@ -973,8 +973,13 @@ function intelKeyPoints(r){
 
   if(ext.supplier_name) add("Counterparty", `<b>${esc(ext.supplier_name)}</b>`);
   if(ext.category) add("Category", esc(ext.category));
-  if(terms.price!=null) add("Unit price", `<b>${eur(terms.price)}</b> per unit`);
+  // A figure above this can't be a per-unit price (it's a total the extractor may have mislabeled) —
+  // never render it as "per unit". Mirrors PLAUSIBLE_UNIT_MAX in fillFormFromExtraction so the display
+  // and the form agree. Belt-and-suspenders: the backend now relabels these as total_value too.
+  const UNIT_PRICE_MAX = 10000;
+  if(terms.price!=null && terms.price<=UNIT_PRICE_MAX) add("Unit price", `<b>${eur(terms.price)}</b> per unit`);
   else if(terms.total_value!=null) add("Total value", `<b>${eur(terms.total_value)}</b> — total/annual, not per-unit`);
+  else if(terms.price!=null) add("Total value", `<b>${eur(terms.price)}</b> — too large for a unit price; read as total/annual`);
   if(terms.payment_days!=null) add("Payment", `net-${Math.round(terms.payment_days)} days`);
   if(terms.volume_units!=null) add("Volume", `${int(terms.volume_units)} units`);
   if(terms.contract_months!=null) add("Term", `${Math.round(terms.contract_months)} months`);
@@ -1398,6 +1403,11 @@ function cockpitView(){
   if(c.busy) return `<div class="wrap"><div class="evid-empty"><span class="spin dark"></span> Scanning the contract for risks…</div></div>`;
   if(c.error) return `<div class="wrap"><button class="cx-back" id="cxBack"><svg width="13" height="13"><use href="#i-chev"/></svg> back</button><div class="intel-block">⚠ ${esc(c.error)}</div></div>`;
   const d=c.data; if(!d) return `<div class="wrap"></div>`;
+  // When the user has uploaded their OWN contract but we're showing the canned example, say so LOUDLY —
+  // the example is a different sample document (CloudVendor MSA), NOT their upload. Silently showing it
+  // next to their file is exactly the bug that made a Phenom upload look like it had CloudVendor's risks.
+  const uploaded = (M.intel && M.intel.filename) ? M.intel.filename : "";
+  const exampleMismatch = d.is_example && uploaded;
   return `<div class="wrap">
     <button class="cx-back" id="cxBack"><svg width="13" height="13"><use href="#i-chev"/></svg> back to the negotiation setup</button>
     <div class="cx-hd">
@@ -1408,6 +1418,9 @@ function cockpitView(){
       <button class="btn ghost" id="cxScanBtn"><svg width="14" height="14"><use href="#i-seal"/></svg> Scan your own contract</button>
       <input type="file" id="cxScanFile" accept=".pdf,application/pdf" hidden>
     </div>
+    ${exampleMismatch?`<div class="intel-block" style="margin-bottom:14px;border-left:3px solid var(--warn,#b8860b)">
+      ⚠ <b>This is a sample contract, not your upload.</b> You loaded <span class="mono">${esc(uploaded)}</span>, but the free demo can't scan your specific document — real risk findings need a live model read. The risks below belong to a bundled example MSA (${esc(d.doc_title)}), shown so you can see how the cockpit works. To scan <span class="mono">${esc(uploaded)}</span> itself, use <b>Scan your own contract</b> (full version).
+    </div>`:""}
     <p class="cx-sub">Every risk below was located by deterministic code and its quote verified against the contract — an <b>anchored ✓</b> badge means the citation is real, not an LLM guess. Severity is escalated by fixed rules a named human owns; the gate decides when legal must review.</p>
     ${c.scanError?`<div class="intel-block" style="margin-bottom:14px">⚠ ${esc(c.scanError)}</div>`:""}
     ${gateBanner(d.gate)}

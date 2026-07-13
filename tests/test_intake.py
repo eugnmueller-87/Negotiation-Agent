@@ -181,18 +181,35 @@ def test_malformed_number_never_crashes_extraction(text):
     assert all(t.name != "volume_units" for t in ex.terms)
 
 
+def _any_value(text: str) -> float | None:
+    """The value of whichever numeric money term the extractor emitted (price or total_value) —
+    used to test number-FORMAT parsing independently of the price/total labeling decision."""
+    terms = extract_contract(text).terms
+    return next((t.value for t in terms if t.name in ("price", "total_value")), None)
+
+
 @pytest.mark.parametrize(
     "text,expected",
     [
         ("unit price EUR 11.50", 11.50),
         ("unit price EUR 11,50", 11.50),
-        ("price EUR 1.234,56 per unit", 1234.56),  # full EU format keeps the cents
-        ("price EUR 1.234.567,89", 1234567.89),  # 1000x error was the bug
+        ("price EUR 1.234,56 per unit", 1234.56),  # full EU format keeps the cents (a unit price)
+        ("price EUR 1.234.567,89", 1234567.89),  # 1000x error was the bug; magnitude must survive
         ("price 1,234.56 EUR", 1234.56),  # full English format
     ],
 )
-def test_eu_and_english_price_formats_keep_magnitude(text, expected):
-    assert _value(text, "price") == expected
+def test_eu_and_english_number_formats_keep_magnitude(text, expected):
+    # A figure over the per-unit ceiling is relabeled total_value (a EUR 1.2M unit price is
+    # implausible), so assert magnitude across either label — THIS test is separator parsing.
+    assert _any_value(text) == expected
+
+
+def test_implausibly_large_unit_price_is_relabeled_total_value():
+    # A single large money figure with no "total" wording is a total/annual fee, never a unit price.
+    ex = extract_contract("The Provider shall be paid EUR 194,920 under this Agreement.")
+    names = {t.name for t in ex.terms}
+    assert "price" not in names
+    assert next(t.value for t in ex.terms if t.name == "total_value") == 194920.0
 
 
 @pytest.mark.parametrize(
