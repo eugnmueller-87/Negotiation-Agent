@@ -98,6 +98,17 @@
   .panel-hd{display:flex;align-items:center;gap:9px;font-size:13px;font-weight:650;color:var(--ink);}
   .panel-hd svg{color:var(--buyer);}
   .panel-sub{font-weight:400;font-size:11.5px;color:var(--ink-3);flex-basis:100%;margin-top:3px;margin-left:24px;line-height:1.45;}
+  /* commercial breakdown of the mandate */
+  .mx{margin-top:14px;display:flex;flex-direction:column;gap:1px;background:var(--line);border-radius:10px;overflow:hidden;border:1px solid var(--line);}
+  .mx-row{display:grid;grid-template-columns:130px 120px 1fr;gap:12px;align-items:baseline;padding:11px 14px;background:var(--surface);border-left:3px solid var(--line);}
+  .mx-row.mx-cur{border-left-color:var(--ink-3);} .mx-row.mx-tgt{border-left-color:var(--good);} .mx-row.mx-flr{border-left-color:var(--crit);}
+  .mx-k{font-size:13px;font-weight:600;color:var(--ink);} .mx-v{font-size:15px;font-weight:600;color:var(--ink);}
+  .mx-sub{font-size:12px;color:var(--ink-2);line-height:1.5;} .mx-sub b{color:var(--ink);}
+  .mx-note{margin-top:12px;font-size:12.5px;color:var(--ink-2);line-height:1.55;padding:10px 13px;background:var(--surface-2);border-radius:9px;}
+  .mx-note b{color:var(--ink);}
+  .mx-empty{margin-top:12px;font-size:13px;color:var(--ink-2);line-height:1.6;padding:12px 14px;background:var(--surface-2);border-radius:9px;} .mx-empty b{color:var(--ink);}
+  .mx-warn{margin-top:12px;font-size:12.5px;color:var(--warn);line-height:1.5;padding:10px 13px;border:1px solid color-mix(in srgb,var(--warn) 40%,transparent);background:color-mix(in srgb,var(--warn) 8%,transparent);border-radius:9px;}
+  @media (max-width:640px){ .mx-row{grid-template-columns:1fr;gap:3px;} }
   .sliders{margin-top:12px;display:flex;flex-direction:column;gap:11px;}
   .slider{display:grid;grid-template-columns:130px 1fr 46px;gap:12px;align-items:center;}
   .slider label{font-size:12.5px;color:var(--ink-2);font-weight:600;}
@@ -561,6 +572,7 @@ const M = {
     rebateOn:false, volumeOn:false,
     // supplier controls
     supplierOpen:109, concession:"medium",  // slow | medium | fast
+    totalValue:null,  // set when a contract gives a total value but no per-unit price
   },
   session:null, signed:null, transcript:[], thread:[], turns:[],
   tab:"buyer", busy:false, status:"live", terminal:false, error:null, convergence:[],
@@ -741,6 +753,7 @@ function setupView(){
       ${field("Max contract length (months)","",`<input class="in" type="number" id="f-contractMax" value="${f.contractMax}">`)}
     </div>
 
+    ${sectionMandateExplainer()}
     ${sectionEmphasis()}
     ${sectionTerms()}
     ${sectionSupplier()}
@@ -880,6 +893,50 @@ function intelResult(r){
         <button class="btn primary" id="intelApplyBtn" ${r.blocked?"disabled":""}>Apply to mandate ↓</button>
         <span class="meta">${r.blocked?"cleared by a human before this unlocks":"writes the shaped target/floor/terms into the form below"}</span>
       </div>` : `<div class="intel-none">No mandate adjustments proposed — the contract looks clean. The extracted numbers are pre-filled below.</div>`}
+  </div>`;
+}
+
+// The commercial breakdown of the mandate: what each number IS and WHY, so a buyer isn't staring
+// at "92 / 108" with no idea where they came from. Current (supplier's opening / status quo) →
+// Target (aspiration) → Floor (walk-away), with the gaps spelled out.
+function sectionMandateExplainer(){
+  const f=M.form;
+  const t=parseFloat(f.target), fl=parseFloat(f.floor), cur=parseFloat(f.supplierOpen);
+  const hasUnit = isFinite(t) && isFinite(fl);
+  const totalV = f.totalValue;
+
+  // No per-unit basis (e.g. a total-value-only contract like the Phenom MSA): explain honestly.
+  if(!hasUnit){
+    return `<div class="panel">
+      <div class="panel-hd"><svg width="15" height="15"><use href="#i-scale"/></svg> Commercial breakdown
+        <span class="panel-sub">what the mandate numbers mean</span></div>
+      <div class="mx-empty">
+        ${totalV!=null?`This contract states a <b>total value of ${eur(totalV)}</b>, not a per-unit price — so there's no unit basis to compute a target or walk-away from. `:``}
+        Set a <b>per-unit target</b> (your aspiration) and a <b>walk-away floor</b> (the worst you'll accept) above, and this breakdown will explain the gap. If you negotiate on total value instead, use the payment and term levers.
+      </div>
+    </div>`;
+  }
+
+  const gapTargetPct = (isFinite(cur) && cur>0) ? ((cur - t)/cur*100) : null;
+  const gapFloorPct  = (isFinite(cur) && cur>0) ? ((cur - fl)/cur*100) : null;
+  const savingsAtTarget = (isFinite(cur)) ? (cur - t) : null;
+  const savingsAtFloor  = (isFinite(cur)) ? (cur - fl) : null;
+  // sanity flag: floor should be a WORSE price than target (for a MINIMIZE price, floor > target)
+  const floorWrongSide = isFinite(t) && isFinite(fl) && fl < t;
+
+  const row=(k,v,sub,cls)=>`<div class="mx-row ${cls||''}">
+    <div class="mx-k">${k}</div><div class="mx-v mono">${v}</div><div class="mx-sub">${sub}</div></div>`;
+
+  return `<div class="panel">
+    <div class="panel-hd"><svg width="15" height="15"><use href="#i-scale"/></svg> Commercial breakdown
+      <span class="panel-sub">why these numbers — the shape of the deal</span></div>
+    <div class="mx">
+      ${isFinite(cur)?row("Current", eur(cur), "the supplier's opening / today's price — the anchor to negotiate down from", "mx-cur"):row("Current","—","no opening price detected — enter the supplier's current price to see the gap","mx-cur")}
+      ${row("Target", eur(t), gapTargetPct!=null?`your aspiration — <b>${gapTargetPct.toFixed(1)}% below current</b> (${eur(savingsAtTarget)}/unit saved if you hit it)`:"your aspiration — where the concession curve starts", "mx-tgt")}
+      ${row("Walk-away floor", eur(fl), gapFloorPct!=null?`never cross this — <b>${gapFloorPct.toFixed(1)}% below current</b> (${eur(savingsAtFloor)}/unit); below it, escalate to a human`:"the worst you'll accept; the engine never concedes past it", "mx-flr")}
+    </div>
+    ${floorWrongSide?`<div class="mx-warn">⚠ Your walk-away floor (${eur(fl)}) is a BETTER price than your target (${eur(t)}). For a price you want to minimise, the floor should be the HIGHER (worse) number — check these two fields.</div>`:``}
+    <div class="mx-note">The <b>engine negotiates inside this band</b>: it opens near your target, concedes down the curve as rounds pass, and <b>never accepts above the floor</b>. The wider the band, the more room to trade.</div>
   </div>`;
 }
 
@@ -1044,6 +1101,7 @@ async function readContract(){
 function fillFormFromExtraction(r){
   const i=r&&r.intelligence; const ext=i&&i.extraction; if(!ext) return;
   const terms=Object.fromEntries((ext.terms||[]).map(t=>[t.name,t.value]));
+  M.form.totalValue=null;  // reset any prior total before this read fills it
   // Fill from the contract. If extraction found NO supplier, clear the sample rather than leave a
   // misleading "Nordwerk" — an empty field honestly says "not detected, type it in" (never guessed).
   if(!M.touched.has("supplier")) M.form.supplier = ext.supplier_name || "";
@@ -1058,10 +1116,16 @@ function fillFormFromExtraction(r){
     if(!M.touched.has("supplierOpen")) M.form.supplierOpen=p;
     if(!M.touched.has("target")) M.form.target=p;
     if(!M.touched.has("floor")) M.form.floor=Math.round((p*1.17)*100)/100;
-  } else if(terms.total_value!=null){
-    M.intel.priceNote=`Found a total/annual contract value of ${eur(terms.total_value)}, not a per-unit price — set the per-unit target and floor yourself.`;
-  } else if(terms.price!=null){
-    M.intel.priceNote=`The extracted ${eur(terms.price)} looks like a total, not a per-unit price — the per-unit target/floor were left for you to set.`;
+  } else if(terms.total_value!=null || terms.price!=null){
+    // Only a TOTAL (or an implausibly-large "price") was found — there is NO per-unit basis, so the
+    // sample 92/108 are MEANINGLESS here. Clear them (unless hand-typed) so the fields honestly show
+    // "not derived — set it yourself" instead of misleading leftover sample numbers.
+    if(!M.touched.has("target")) M.form.target="";
+    if(!M.touched.has("floor")) M.form.floor="";
+    if(!M.touched.has("supplierOpen")) M.form.supplierOpen="";
+    const total = terms.total_value!=null ? +terms.total_value : +terms.price;
+    M.intel.priceNote=`Found a total/annual contract value of ${eur(total)} — not a per-unit price. There's no unit basis to derive a target or floor, so those fields were cleared for you to set.`;
+    M.form.totalValue = total;  // remember the total so the commercial breakdown can explain it
   }
   if(terms.contract_months!=null && !M.touched.has("contractMax"))
     M.form.contractMax=Math.round(+terms.contract_months);
