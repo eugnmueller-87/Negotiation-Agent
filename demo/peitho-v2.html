@@ -528,15 +528,24 @@ const PERSONAS = [
   {id:"evasive",    label:"Evasive",     hint:"stalls, defers, avoids numbers"},
 ];
 
+// European number formatting throughout — 194.920,00 € (dot thousands, comma decimal), one
+// consistent standard so no field mixes US "194920.00" with EU "228056,4".
+const _EUR = new Intl.NumberFormat('de-DE', {style:'currency', currency:'EUR'});
+const _EUR0 = new Intl.NumberFormat('de-DE', {maximumFractionDigits:0});
+const _NUM2 = new Intl.NumberFormat('de-DE', {minimumFractionDigits:2, maximumFractionDigits:2});
+const eur = x => _EUR.format(+x);                 // "194.920,00 €"
+const num = (x,d=0) => new Intl.NumberFormat('de-DE',{minimumFractionDigits:d,maximumFractionDigits:d}).format(+x);
+const int = x => _EUR0.format(Math.round(+x));    // "194.920"
+
 const TERM_LABELS = {price:"Unit price", payment_days:"Payment terms", contract_months:"Contract length",
   rebate_pct:"Rebate %", volume_units:"Annual volume"};
 function fmtTerm(name, x){
   if(x==null) return "—";
-  if(name==="price") return "€"+Number(x).toFixed(2);
+  if(name==="price") return eur(x);
   if(name==="payment_days") return "net-"+Math.round(x);
   if(name==="contract_months") return Math.round(x)+" mo";
-  if(name==="rebate_pct") return Number(x).toFixed(1)+"%";
-  if(name==="volume_units") return Math.round(x).toLocaleString('en')+" units";
+  if(name==="rebate_pct") return num(x,1)+"%";
+  if(name==="volume_units") return int(x)+" units";
   return String(x);
 }
 
@@ -738,7 +747,7 @@ function setupView(){
 
     <div class="startrow">
       <button class="btn primary big" id="startBtn"><svg width="16" height="16"><use href="#i-seal"/></svg> Sign the mandate &amp; open</button>
-      <span class="meta">target €${(+f.target).toFixed(2)} · floor €${(+f.floor).toFixed(2)} · ${activeTerms().length} terms on the table</span>
+      <span class="meta">target ${eur(f.target)} · floor ${eur(f.floor)} · ${activeTerms().length} terms on the table</span>
     </div>
   </div>`;
 }
@@ -790,12 +799,12 @@ Category: Corrugated packaging
 function intelEssence(r){
   const i=r.intelligence, ext=i.extraction, life=i.lifecycle||{}, legal=i.legal||{};
   const terms=Object.fromEntries((ext.terms||[]).map(t=>[t.name,t.value]));
-  const num=(v,fmt)=> v!=null ? `<span class="esv">${fmt?fmt(v):esc(String(v))}</span>` : `<span class="esv"><span class="unk">not detected</span></span>`;
+  const cell=(v)=> v!=null ? `<span class="esv">${esc(String(v))}</span>` : `<span class="esv"><span class="unk">not detected</span></span>`;
   const cells = [
-    ["Unit price", terms.price!=null?`€${(+terms.price).toFixed(2)}`:null],
+    ["Unit price", terms.price!=null?eur(terms.price):null],
     ["Payment", terms.payment_days!=null?`net-${terms.payment_days}`:null],
-    ["Volume", terms.volume_units!=null?`${(+terms.volume_units).toLocaleString('en')} u`:null],
-    ["Rebate", terms.rebate_pct!=null?`${(+terms.rebate_pct).toFixed(1)}%`:null],
+    ["Volume", terms.volume_units!=null?`${int(terms.volume_units)} u`:null],
+    ["Rebate", terms.rebate_pct!=null?`${num(terms.rebate_pct,1)}%`:null],
     ["Expiry", life.expiration_date&&life.expiration_date.value!=null?esc(String(life.expiration_date.value)):null],
   ];
   const chips=[];
@@ -808,7 +817,7 @@ function intelEssence(r){
     <div class="essence-hd"><svg width="15" height="15"><use href="#i-seal"/></svg>
       <b>Negotiating with ${supplier}</b></div>
     <div class="essence-grid">
-      ${cells.map(([k,v])=>`<div class="es"><span class="esk">${k}</span>${num(v)}</div>`).join("")}
+      ${cells.map(([k,v])=>`<div class="es"><span class="esk">${k}</span>${cell(v)}</div>`).join("")}
     </div>
     ${chips.length?`<div class="es-flag">${chips.map(c=>`<span class="es-chip">${c}</span>`).join("")}</div>`:""}
   </div>`;
@@ -822,9 +831,9 @@ function intelResult(r){
   const terms=Object.fromEntries((ext.terms||[]).map(t=>[t.name,t.value]));
   const pic = [
     ["Supplier", ext.supplier_name?`<b>${esc(ext.supplier_name)}</b>`:`<span class="unk">—</span>`],
-    ["Unit price", terms.price!=null?`<b>€${(+terms.price).toFixed(2)}</b>`:`<span class="unk">—</span>`],
+    ["Unit price", terms.price!=null?`<b>${eur(terms.price)}</b>`:`<span class="unk">—</span>`],
     ["Payment", terms.payment_days!=null?`<b>net-${terms.payment_days}</b>`:`<span class="unk">—</span>`],
-    ["Volume", terms.volume_units!=null?`<b>${(+terms.volume_units).toLocaleString('en')} units</b>`:`<span class="unk">—</span>`],
+    ["Volume", terms.volume_units!=null?`<b>${int(terms.volume_units)} units</b>`:`<span class="unk">—</span>`],
     ["Expiry", grounded(life.expiration_date)],
     ["NDA", grounded(legal.has_nda, v=>v==="true"?"in place ✓":"none")],
     ["DPA", grounded(legal.has_dpa, v=>v==="true"?"in place ✓":"none")],
@@ -839,7 +848,8 @@ function intelResult(r){
   const blocked = r.blocked ? `<div class="intel-block">⛔ ${esc(r.block_reason||"Supplier blocked — a human must clear this.")}</div>` : "";
 
   // extraction warnings (truncation, no terms, no supplier) — surfaced, never silent
-  const warns=(i.warnings||[]);
+  const warns=(i.warnings||[]).slice();
+  if(M.intel.priceNote) warns.push(M.intel.priceNote);  // total-vs-unit-price heads-up
   const warnRow = warns.length ? `<div class="intel-warns">${warns.map(w=>`<div class="intel-warn">⚠ ${esc(w)}</div>`).join("")}</div>` : "";
 
   const adj = (r.adjustments||[]).map(a=>{
@@ -1012,7 +1022,7 @@ async function extractFileServerSide(file){
 async function readContract(){
   const text=(M.intel.text||"").trim();
   if(!text){ M.intel.error="upload or paste a contract first"; render(); return; }
-  M.intel.busy=true; M.intel.error=null; M.intel.result=null; M.intel.accepted={}; render();
+  M.intel.busy=true; M.intel.error=null; M.intel.result=null; M.intel.accepted={}; M.intel.priceNote=null; render();
   try{
     const research=$("#intelResearch") ? $("#intelResearch").checked : true;
     const res=await post("/intel", {contract_text:text, research});
@@ -1034,10 +1044,20 @@ function fillFormFromExtraction(r){
   // misleading "Nordwerk" — an empty field honestly says "not detected, type it in" (never guessed).
   if(!M.touched.has("supplier")) M.form.supplier = ext.supplier_name || "";
   if(!M.touched.has("category") && ext.category) M.form.category=ext.category;
+  // A "unit price" in the tens of thousands is almost certainly a TOTAL/annual figure the regex
+  // grabbed, not a per-unit price — pre-filling it as the per-unit target/floor produces nonsense
+  // (a €228k walk-away floor). Above this threshold, DON'T guess the per-unit levers; flag it and
+  // leave them for the human. The real fix for total-vs-unit is the LLM scan, not the regex.
+  const PLAUSIBLE_UNIT_MAX = 10000;
   if(terms.price!=null){
-    if(!M.touched.has("supplierOpen")) M.form.supplierOpen=+terms.price;
-    if(!M.touched.has("target")) M.form.target=+terms.price;
-    if(!M.touched.has("floor")) M.form.floor=Math.round((+terms.price*1.17)*100)/100;
+    const p=+terms.price;
+    if(p<=PLAUSIBLE_UNIT_MAX){
+      if(!M.touched.has("supplierOpen")) M.form.supplierOpen=p;
+      if(!M.touched.has("target")) M.form.target=p;
+      if(!M.touched.has("floor")) M.form.floor=Math.round((p*1.17)*100)/100;
+    } else {
+      M.intel.priceNote=`The extracted €${int(p)} looks like a total or annual value, not a per-unit price — the per-unit target/floor were left for you to set.`;
+    }
   }
   if(terms.payment_days!=null && !M.touched.has("paymentLever"))
     M.form.paymentLever=Math.max(+M.form.paymentLever, +terms.payment_days);
@@ -1249,8 +1269,9 @@ function evidencePane(d){
 }
 
 function commercialTab(d){
-  const e=d.economics, cur=e.currency;
-  const money=v=>`${cur} ${(+v).toLocaleString('en')}`;
+  const e=d.economics;
+  // European currency formatting; fall back to the dossier's currency label if not EUR
+  const money=v=> e.currency==="EUR" ? eur(v) : `${e.currency} ${num(v,0)}`;
   const build=e.build_up.map(p=>`<div class="econ-row"><span class="lbl">${esc(p.label)}<br><span class="note">${esc(p.note)}</span></span><span class="amt">${money(p.amount_eur)}</span></div>`).join("");
   const risks=e.risks.map(r=>`<div class="erisk sev-${r.severity}">
     <div class="erisk-body">
@@ -1376,7 +1397,7 @@ function mandateCard(){
       <div class="mrow"><span class="k">Category</span><span class="v">${esc(f.category)}</span></div>
       <div class="mrow"><span class="k">Signed by</span><span class="v">e.mueller (demo) · v1</span></div>
       <div class="mrow"><span class="k">Target · Floor <i style="text-transform:none;letter-spacing:0;font-style:italic;color:var(--ink-3)">— buyer-private</i></span>
-        <span class="v"><span class="mono">€${(+f.target).toFixed(2)}</span> · <span class="mono">€${(+f.floor).toFixed(2)}</span></span></div>
+        <span class="v"><span class="mono">${eur(f.target)}</span> · <span class="mono">${eur(f.floor)}</span></span></div>
       <div class="mrow"><span class="k">Levers</span><span class="v">payment ≤ net-${f.paymentLever} · term ≤ ${f.contractMax}mo</span></div>
       ${emphRows}
       <div class="mfoot"><span class="sig">signed &amp; HMAC-verified server-side</span>
@@ -1595,9 +1616,9 @@ function chartSVG(){
     const dots = pts.map((p,i)=>`<circle cx="${X(i).toFixed(1)}" cy="${Y(p[key]).toFixed(1)}" r="3" fill="${color}"/>`).join("");
     return `<path d="${d}" fill="none" stroke="${color}" stroke-width="2.2" stroke-linejoin="round"/>${dots}`;
   };
-  const grid = [0,0.5,1].map(t=>{const y=PT+t*(H-PT-PB); const val=(hi-(t*(hi-lo))).toFixed(0);
+  const grid = [0,0.5,1].map(t=>{const y=PT+t*(H-PT-PB); const val=hi-(t*(hi-lo));
     return `<line x1="${PL}" y1="${y}" x2="${W-PR}" y2="${y}" stroke="var(--chart-grid)" stroke-width="1"/>
-      <text x="${PL-8}" y="${y+3.5}" text-anchor="end" font-size="10" fill="var(--chart-axis)" font-family="var(--mono)">€${val}</text>`;}).join("");
+      <text x="${PL-8}" y="${y+3.5}" text-anchor="end" font-size="10" fill="var(--chart-axis)" font-family="var(--mono)">${eur(val)}</text>`;}).join("");
   const xlab = pts.map((_,i)=>`<text x="${X(i)}" y="${H-8}" text-anchor="middle" font-size="10" fill="var(--chart-axis)" font-family="var(--mono)">r${i+1}</text>`).join("");
   return `<div style="overflow-x:auto"><svg viewBox="0 0 ${W} ${H}" style="width:100%;min-width:420px;display:block">
     ${grid}${xlab}${line("supplier","var(--supplier)")}${line("buyer","var(--buyer)")}</svg></div>`;
