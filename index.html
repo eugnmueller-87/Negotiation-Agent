@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Negotiation Agent demos</title>
+<meta name="description" content="A procurement negotiation agent where the LLM has zero authority. Two demos that run in the browser, every number from the deterministic engine.">
+<style>
+  :root {
+    --bg: #f7f6f3; --card: #ffffff; --text: #1c1b19; --muted: #625e57;
+    --line: #e4e1da; --accent: #3b4fd8; --accent-text: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141416; --card: #1d1d21; --text: #ecebe8; --muted: #a39f97;
+      --line: #2e2e33; --accent: #8c9bff; --accent-text: #141416;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 860px; margin: 0 auto; padding: 56px 16px 64px; }
+  h1 { font-size: clamp(28px, 5vw, 40px); line-height: 1.15; margin: 0 0 12px; letter-spacing: -0.01em; }
+  .lead { color: var(--muted); max-width: 640px; margin: 0 0 8px; }
+  .status { font-size: 14px; color: var(--muted); margin: 0 0 36px; }
+  .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 22px; display: flex; flex-direction: column; gap: 10px;
+  }
+  .card h2 { font-size: 19px; margin: 0; }
+  .card p { margin: 0; color: var(--muted); font-size: 15px; }
+  .card a.open {
+    margin-top: auto; align-self: flex-start; text-decoration: none; font-weight: 600;
+    background: var(--accent); color: var(--accent-text); padding: 9px 16px; border-radius: 8px;
+  }
+  .thesis { margin: 36px 0 0; padding-top: 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: 15px; }
+  .thesis a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Negotiation Agent</h1>
+  <p class="lead">A procurement negotiation agent where the LLM has zero authority. A deterministic engine makes
+    every accept, counter and walk-away call; a language model only drafts the words.</p>
+  <p class="status">The live app (FastAPI backend with Claude Opus and Haiku) is paused since November 2026.
+    These two demos run entirely in your browser, and every number in them is real output from the engine.</p>
+
+  <div class="grid">
+    <section class="card">
+      <h2>One negotiation, both sides visible</h2>
+      <p>Buyer and supplier side by side, so you see the information gap a real deal hides. Open the reasoning under
+        any buyer message: the engine's decision, the approved numbers, and the guard that rejects a figure the engine
+        did not approve. Message prose comes from persona templates here.</p>
+      <a class="open" href="peitho.html">Open self-play</a>
+    </section>
+    <section class="card">
+      <h2>1,000 suppliers at once</h2>
+      <p>The tail spend nobody negotiates by hand. Press play and watch the category close in waves, then click any
+        supplier to see both sides' private utilities and why the trade was smart, not just fast.</p>
+      <a class="open" href="fleet.html">Open the fleet</a>
+    </section>
+  </div>
+
+  <p class="thesis">Engine, guard and minutes are a faithful JavaScript port of the Python core.
+    Source, tests and design: <a href="https://github.com/eugnmueller-87/Negotiation-Agent">github.com/eugnmueller-87/Negotiation-Agent</a>.</p>
+</main>
+</body>
+</html>
