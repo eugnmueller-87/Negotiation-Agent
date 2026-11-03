@@ -267,8 +267,10 @@ def checklist_prompt_block() -> str:
     category and files a finding when a listed protection is ABSENT (the senior-counsel behaviour).
     Kept compact — labels + what to look for, not the negotiation positions (those are attached to
     findings deterministically after extraction)."""
-    lines = ["CHECKLIST — for EACH category, check every item; file a finding for any that is "
-             "adverse OR ABSENT (word an absence with 'no'/'missing'/'without'):"]
+    lines = [
+        "CHECKLIST — for EACH category, check every item; file a finding for any that is "
+        "adverse OR ABSENT (word an absence with 'no'/'missing'/'without'):"
+    ]
     for category, items in CHECKLIST.items():
         lines.append(f"\n{_CATEGORY_TITLE[category]}:")
         for item in items:

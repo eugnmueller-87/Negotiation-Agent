@@ -233,9 +233,7 @@ def _buyer_envelope(
     )
 
 
-def _supplier_envelope(
-    negotiation_id: str, *, price_hi: float, price_lo: float
-) -> Envelope:
+def _supplier_envelope(negotiation_id: str, *, price_hi: float, price_lo: float) -> Envelope:
     # The hidden truth mirrors the reference supplier: price matters less than the
     # buyer thinks; the real pain is cash flow (payment days) and volume certainty.
     # Its price band is the exact mirror of the buyer's, so both agents score every

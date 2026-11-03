@@ -264,9 +264,7 @@ def scan_contract(
         in_tokens += wi
         out_tokens += wo
         ran += 1
-        passes.append(
-            PassStatus(window_index=window.index, status="ran", findings_count=len(kept))
-        )
+        passes.append(PassStatus(window_index=window.index, status="ran", findings_count=len(kept)))
 
     if windows and ran == 0:
         # every window failed transiently — no dossier can be built honestly

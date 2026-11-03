@@ -88,22 +88,25 @@ and a retrieval date; a fact from the uploaded document is sourced by the docume
 ```python
 class DocumentGrounded(BaseModel):
     """A fact read from the uploaded contract. Source = the document the human holds."""
+
     model_config = {"frozen": True}
-    quote: str = ""                        # verbatim span, grounding (generalizes intake.py:35)
-    page: int | None = None                # PDF page when known; None for pasted text
-    confidence: float = Field(ge=0.0, le=1.0, default=1.0)   # LLM-authored, continuous
+    quote: str = ""  # verbatim span, grounding (generalizes intake.py:35)
+    page: int | None = None  # PDF page when known; None for pasted text
+    confidence: float = Field(ge=0.0, le=1.0, default=1.0)  # LLM-authored, continuous
     source: Literal["regex", "llm"] = "llm"
     # DERIVED, pure-Python, the ONLY thing the transform may read:
     assurance: Literal["confirmed", "probable", "unknown"] = "unknown"
 
+
 class SourcedFinding(BaseModel):
     """A fact about the WORLD (supplier, sanctions, geopolitics). Needs provenance.
     Cannot be constructed without a source+date — the compliance rule as a type."""
+
     model_config = {"frozen": True}
     claim: str
-    source_ref: str                        # list name / URL / assessment id, e.g. "OFAC SDN"
-    retrieved_at: str                      # ISO-8601; REQUIRED, no default
-    as_of: str | None = None               # when the underlying fact was dated, if known
+    source_ref: str  # list name / URL / assessment id, e.g. "OFAC SDN"
+    retrieved_at: str  # ISO-8601; REQUIRED, no default
+    as_of: str | None = None  # when the underlying fact was dated, if known
     confidence: float = Field(ge=0.0, le=1.0, default=1.0)
     provider: Literal["hades", "sample", "derived", "manual"]
 ```
@@ -123,38 +126,43 @@ The transform reads `assurance`, never `confidence`.
 ```python
 class ContractLifecycle(BaseModel):
     model_config = {"frozen": True}
-    effective_date:          DocumentGrounded | None = None   # value in .quote / parsed separately
-    expiration_date:         DocumentGrounded | None = None
-    initial_term_months:     DocumentGrounded | None = None
-    auto_renews:             DocumentGrounded | None = None    # the evergreen-trap flag
-    renewal_term_months:     DocumentGrounded | None = None
-    renewal_notice_days:     DocumentGrounded | None = None    # window to STOP auto-renewal
+    effective_date: DocumentGrounded | None = None  # value in .quote / parsed separately
+    expiration_date: DocumentGrounded | None = None
+    initial_term_months: DocumentGrounded | None = None
+    auto_renews: DocumentGrounded | None = None  # the evergreen-trap flag
+    renewal_term_months: DocumentGrounded | None = None
+    renewal_notice_days: DocumentGrounded | None = None  # window to STOP auto-renewal
     termination_notice_days: DocumentGrounded | None = None
+
 
 class License(BaseModel):
     model_config = {"frozen": True}
-    license_type: DocumentGrounded          # per-seat | site | subscription | perpetual | consumption
-    seats:        DocumentGrounded | None = None
-    term_months:  DocumentGrounded | None = None
+    license_type: DocumentGrounded  # per-seat | site | subscription | perpetual | consumption
+    seats: DocumentGrounded | None = None
+    term_months: DocumentGrounded | None = None
 
-class LineItem(BaseModel):                  # a SKU / token bucket — LIST, contracts have many
+
+class LineItem(BaseModel):  # a SKU / token bucket — LIST, contracts have many
     model_config = {"frozen": True}
-    sku:         DocumentGrounded | None = None
+    sku: DocumentGrounded | None = None
     description: DocumentGrounded | None = None
-    quantity:    DocumentGrounded | None = None
-    unit:        DocumentGrounded | None = None     # "pcs" | "kg" | "1000 tokens" | "user/month"
-    unit_price:  DocumentGrounded | None = None
-    currency:    DocumentGrounded | None = None     # do NOT assume EUR — _PRICE_RE hardcodes € at intake.py:83-87
+    quantity: DocumentGrounded | None = None
+    unit: DocumentGrounded | None = None  # "pcs" | "kg" | "1000 tokens" | "user/month"
+    unit_price: DocumentGrounded | None = None
+    currency: DocumentGrounded | None = (
+        None  # do NOT assume EUR — _PRICE_RE hardcodes € at intake.py:83-87
+    )
+
 
 class LegalFlags(BaseModel):
     model_config = {"frozen": True}
-    has_nda:       DocumentGrounded | None = None   # tri-state: True / False / None(unknown)
-    has_dpa:       DocumentGrounded | None = None   # GDPR Art.28 processor agreement
+    has_nda: DocumentGrounded | None = None  # tri-state: True / False / None(unknown)
+    has_dpa: DocumentGrounded | None = None  # GDPR Art.28 processor agreement
     governing_law: DocumentGrounded | None = None
-    jurisdiction:  DocumentGrounded | None = None
+    jurisdiction: DocumentGrounded | None = None
     liability_cap: DocumentGrounded | None = None
-    liability_cap_basis:      DocumentGrounded | None = None   # "12 months fees" | "unlimited"
-    data_processing_location: DocumentGrounded | None = None   # GDPR/LkSG relevant
+    liability_cap_basis: DocumentGrounded | None = None  # "12 months fees" | "unlimited"
+    data_processing_location: DocumentGrounded | None = None  # GDPR/LkSG relevant
 ```
 
 **Tri-state `has_nda`/`has_dpa` is load-bearing.** `None` = "could not determine", **not** "absent". A
@@ -168,17 +176,18 @@ explicitly told to return `false` only with a quotable basis, never by default.
 ```python
 class ContractIntelligence(BaseModel):
     model_config = {"frozen": True}
-    extraction: ContractExtraction          # Zone A, unchanged shape — backward compat
-    lifecycle:  ContractLifecycle | None = None
-    licenses:   list[License]   = Field(default_factory=list)
-    line_items: list[LineItem]  = Field(default_factory=list)
-    legal:      LegalFlags | None = None
+    extraction: ContractExtraction  # Zone A, unchanged shape — backward compat
+    lifecycle: ContractLifecycle | None = None
+    licenses: list[License] = Field(default_factory=list)
+    line_items: list[LineItem] = Field(default_factory=list)
+    legal: LegalFlags | None = None
     extractor_used: Literal["regex", "regex+llm"] = "regex"
-    llm_model:  str | None = None            # audit trail, e.g. "claude-opus-4-8"
-    conflicts:  list[str] = Field(default_factory=list)   # regex-vs-LLM disagreements, human-readable
-    warnings:   list[str] = Field(default_factory=list)
+    llm_model: str | None = None  # audit trail, e.g. "claude-opus-4-8"
+    conflicts: list[str] = Field(default_factory=list)  # regex-vs-LLM disagreements, human-readable
+    warnings: list[str] = Field(default_factory=list)
 
-    def to_offer(self, term_names): return self.extraction.to_offer(term_names)  # Zone B never here
+    def to_offer(self, term_names):
+        return self.extraction.to_offer(term_names)  # Zone B never here
 ```
 
 Nesting `extraction: ContractExtraction` (not flattening) means `prepare_negotiation`

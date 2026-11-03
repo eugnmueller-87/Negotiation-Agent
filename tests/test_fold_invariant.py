@@ -119,12 +119,30 @@ def test_recalibrated_default_schedule_matches_design(mixed_envelope):
         target_utility=0.90,
         reservation_utility=0.60,
         terms=[
-            TermSpec(name="price", term_type=TermType.PRICE, direction=Direction.MINIMIZE,
-                     best=92.0, worst=108.0, weight=0.50),
-            TermSpec(name="payment_days", term_type=TermType.PAYMENT_DAYS,
-                     direction=Direction.MAXIMIZE, best=60.0, worst=30.0, weight=0.25),
-            TermSpec(name="contract_months", term_type=TermType.CONTRACT_MONTHS,
-                     direction=Direction.MINIMIZE, best=12.0, worst=24.0, weight=0.25),
+            TermSpec(
+                name="price",
+                term_type=TermType.PRICE,
+                direction=Direction.MINIMIZE,
+                best=92.0,
+                worst=108.0,
+                weight=0.50,
+            ),
+            TermSpec(
+                name="payment_days",
+                term_type=TermType.PAYMENT_DAYS,
+                direction=Direction.MAXIMIZE,
+                best=60.0,
+                worst=30.0,
+                weight=0.25,
+            ),
+            TermSpec(
+                name="contract_months",
+                term_type=TermType.CONTRACT_MONTHS,
+                direction=Direction.MINIMIZE,
+                best=12.0,
+                worst=24.0,
+                weight=0.25,
+            ),
         ],
     )
     eng = _engine(env, max_rounds=6, beta=2.5)

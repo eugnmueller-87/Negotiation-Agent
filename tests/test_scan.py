@@ -19,8 +19,7 @@ from negotiation_agent.dossier import _render_sample_pdf  # noqa: E402
 
 # a verbatim fragment of the sample's liability clause — anchors when quoted, present in one block
 LIAB_QUOTE = (
-    "shall not exceed the fees paid by the Customer "
-    "in the three (3) months preceding the claim"
+    "shall not exceed the fees paid by the Customer in the three (3) months preceding the claim"
 )
 DPA_QUOTE = "sub-processors may be engaged by the Supplier as required to deliver the services"
 
@@ -88,8 +87,15 @@ def test_fabricated_quote_is_quarantined(pdf_bytes):
     b = _blocks(pdf_bytes)
     liab = next(x for x in b if "aggregate liability" in x.text)
     client = _FakeClient(
-        [_lf("legal", "high", "Fake", "the supplier warrants 99.99% uptime with liquidated damages",
-             liab.anchor_id)]
+        [
+            _lf(
+                "legal",
+                "high",
+                "Fake",
+                "the supplier warrants 99.99% uptime with liquidated damages",
+                liab.anchor_id,
+            )
+        ]
     )
     d = scan.scan_contract(pdf_bytes, client).dossier
     assert d.findings[0].verified is False and d.gate.ignored_unverified >= 1

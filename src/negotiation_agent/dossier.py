@@ -237,10 +237,16 @@ def _economic_breakdown() -> EconomicBreakdown:
     return EconomicBreakdown(
         term_months=36,
         build_up=[
-            PriceComponent(label="Committed subscription (Schedule A)", amount_eur=base,
-                           note="EUR 400,000/yr flat for committed capacity"),
-            PriceComponent(label="Expected overage", amount_eur=overage,
-                           note="~500k units/yr over the 3M commit at EUR 0.12/unit"),
+            PriceComponent(
+                label="Committed subscription (Schedule A)",
+                amount_eur=base,
+                note="EUR 400,000/yr flat for committed capacity",
+            ),
+            PriceComponent(
+                label="Expected overage",
+                amount_eur=overage,
+                note="~500k units/yr over the 3M commit at EUR 0.12/unit",
+            ),
         ],
         year1_total_eur=year1,
         tco_over_term_eur=tco,

@@ -39,9 +39,7 @@ def test_moved_terms_diff_the_inbound_baseline_not_returned_state(mixed_envelope
     d1, _ = eng.decide(s0, weak)  # a fresh counter at threshold(1)
 
     # prev_counter = the package on the table BEFORE d1 == s0.last_counter (the anchor)
-    brief = build_move_brief(
-        d1, mixed_envelope, prev_counter=s0.last_counter, max_rounds=6
-    )
+    brief = build_move_brief(d1, mixed_envelope, prev_counter=s0.last_counter, max_rounds=6)
     # the counter at round 1 differs from the anchor -> at least one moved term reported
     assert brief.outcome == "COUNTER"
     # not asserting a specific term (depends on logrolling), but movement must be visible

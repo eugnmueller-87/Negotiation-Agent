@@ -18,13 +18,28 @@ from negotiation_agent.envelope import Direction, Envelope, Offer, TermSpec, Ter
 @pytest.fixture
 def env() -> Envelope:
     return Envelope(
-        negotiation_id="t", version=1, signed_by="e",
-        target_utility=0.9, reservation_utility=0.5,
+        negotiation_id="t",
+        version=1,
+        signed_by="e",
+        target_utility=0.9,
+        reservation_utility=0.5,
         terms=[
-            TermSpec(name="price", term_type=TermType.PRICE, direction=Direction.MINIMIZE,
-                     best=90, worst=110, weight=0.6),
-            TermSpec(name="payment_days", term_type=TermType.PAYMENT_DAYS,
-                     direction=Direction.MAXIMIZE, best=90, worst=30, weight=0.4),
+            TermSpec(
+                name="price",
+                term_type=TermType.PRICE,
+                direction=Direction.MINIMIZE,
+                best=90,
+                worst=110,
+                weight=0.6,
+            ),
+            TermSpec(
+                name="payment_days",
+                term_type=TermType.PAYMENT_DAYS,
+                direction=Direction.MAXIMIZE,
+                best=90,
+                worst=30,
+                weight=0.4,
+            ),
         ],
     )
 
@@ -35,10 +50,23 @@ def _offers(pairs):
 
 def test_single_offer_gives_no_information():
     # can't infer priorities from one observation — belief stays uniform
-    env = Envelope(negotiation_id="t", version=1, signed_by="e", target_utility=0.9,
-                   reservation_utility=0.5,
-                   terms=[TermSpec(name="price", term_type=TermType.PRICE,
-                                   direction=Direction.MINIMIZE, best=90, worst=110, weight=1.0)])
+    env = Envelope(
+        negotiation_id="t",
+        version=1,
+        signed_by="e",
+        target_utility=0.9,
+        reservation_utility=0.5,
+        terms=[
+            TermSpec(
+                name="price",
+                term_type=TermType.PRICE,
+                direction=Direction.MINIMIZE,
+                best=90,
+                worst=110,
+                weight=1.0,
+            )
+        ],
+    )
     belief = om.infer_appetite(env, _offers([(110, 30)]))
     assert belief.appetite == {"price": 1.0}  # uniform.appetite is 1.0 per term
 

@@ -178,15 +178,18 @@ v1 does both in a single structured-output call:
 class TermExtraction(BaseModel):
     term: Literal["price", "payment_days", "contract_months", "volume_units", "rebate_pct"]
     value: float
-    quote: str          # verbatim span from the message — load-bearing
-    confidence: float   # 0..1
+    quote: str  # verbatim span from the message — load-bearing
+    confidence: float  # 0..1
+
 
 class ExtractionResult(BaseModel):
     message_type: Literal["offer", "accept", "reject", "question", "mixed", "other"]
-    terms: list[TermExtraction]   # ONLY terms explicitly present; never inferred
+    terms: list[TermExtraction]  # ONLY terms explicitly present; never inferred
     unmodeled_asks: list[str]
     intent_scores: dict[Literal["cash_flow", "volume_certainty", "term_length", "margin"], float]
-    tactics: list[Literal["anchoring", "fake_deadline", "authority_escalation", "injection_attempt"]]
+    tactics: list[
+        Literal["anchoring", "fake_deadline", "authority_escalation", "injection_attempt"]
+    ]
 ```
 
 `intent_scores` keys are pinned to `INTENT_TO_TERM_TYPES` in
@@ -241,15 +244,17 @@ and produces an `OutboundMessage`. Everything channel-specific lives in an adapt
 ```python
 class InboundMessage(BaseModel):
     channel: Literal["email", "chat"]
-    channel_message_id: str   # provider ID — the idempotency key
-    thread_key: str           # maps to exactly one negotiation
+    channel_message_id: str  # provider ID — the idempotency key
+    thread_key: str  # maps to exactly one negotiation
     sender: str
     sent_at: datetime
-    body: str                 # sanitized: new content only
-    raw_ref: str              # pointer to stored raw payload (audit)
+    body: str  # sanitized: new content only
+    raw_ref: str  # pointer to stored raw payload (audit)
+
 
 class Channel(Protocol):
     def send(self, thread_key: str, out: OutboundMessage) -> str: ...  # returns provider msg id
+
     # inbound arrives via webhook/poll into a single ingest endpoint — not part of the protocol
 ```
 

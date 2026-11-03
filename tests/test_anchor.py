@@ -26,8 +26,7 @@ _PAGES = [["12. Limitation of liability", _LIABILITY], ["18. Indemnification", _
 
 # A verbatim fragment of the liability clause — a realistic finding quote.
 _LIABILITY_QUOTE = (
-    "shall not exceed the fees paid by the Customer "
-    "in the three (3) months preceding the claim"
+    "shall not exceed the fees paid by the Customer in the three (3) months preceding the claim"
 )
 
 
@@ -65,8 +64,7 @@ def test_real_quote_anchors_at_the_right_block(doc):
 def test_quote_with_linebreak_drift_still_anchors(doc):
     # a model returns the clause with its own line breaks; normalization must not defeat the match
     quote = (
-        "The Supplier's aggregate liability\n arising out of "
-        "or in connection with   this Agreement"
+        "The Supplier's aggregate liability\n arising out of or in connection with   this Agreement"
     )
     v = anchor.verify_finding(doc, _liability_anchor(doc), quote)
     assert v.status == "anchored"

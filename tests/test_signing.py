@@ -18,11 +18,20 @@ SECRET = "test-secret-value"
 def _mandate(reservation=0.60):
     return MandateEnvelope(
         envelope={
-            "negotiation_id": "n1", "version": 1, "signed_by": "buyer",
-            "target_utility": 0.90, "reservation_utility": reservation,
+            "negotiation_id": "n1",
+            "version": 1,
+            "signed_by": "buyer",
+            "target_utility": 0.90,
+            "reservation_utility": reservation,
             "terms": [
-                {"name": "price", "term_type": "price", "direction": "minimize",
-                 "best": 92.0, "worst": 108.0, "weight": 1.0},
+                {
+                    "name": "price",
+                    "term_type": "price",
+                    "direction": "minimize",
+                    "best": 92.0,
+                    "worst": 108.0,
+                    "weight": 1.0,
+                },
             ],
         },
         supplier_appetite={"price": 0.5},
@@ -40,9 +49,7 @@ def test_signed_mandate_verifies():
 def test_tampered_mandate_is_rejected():
     signed = sign_mandate(_mandate(reservation=0.60), "sess-1", 1000, 4600, SECRET)
     # attacker lowers the reservation floor to 0.0 to extract a below-floor deal
-    tampered = signed.model_copy(
-        update={"mandate": _mandate(reservation=0.0)}
-    )
+    tampered = signed.model_copy(update={"mandate": _mandate(reservation=0.0)})
     with pytest.raises(MandateError, match="verify"):
         verify_mandate(tampered, SECRET, now=2000)
 

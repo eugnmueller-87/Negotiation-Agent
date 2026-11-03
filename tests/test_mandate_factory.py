@@ -28,8 +28,11 @@ def test_scale_fix_no_fabrication():
     # baseline-scaled band and the saving must not exceed the signed 5% — the old bug scored
     # €272 against a 9..12 band, clamped the price utility, and "saved" ~96%.
     row = ContractRow(
-        row_id="r", instruction="renew", renew_pct=5.0,
-        baseline_price=272.0, annual_spend_eur=250000.0,
+        row_id="r",
+        instruction="renew",
+        renew_pct=5.0,
+        baseline_price=272.0,
+        annual_spend_eur=250000.0,
     )
     cm = compile_row(row, signed_by="cm")
     assert cm.route == "negotiate" and cm.price_scaled
@@ -80,8 +83,11 @@ def test_cancel_routes_to_terminate_no_envelopes():
 
 def test_low_confidence_renew_queues_for_human():
     row = ContractRow(
-        row_id="r", instruction="renew", renew_pct=8.0,
-        baseline_price=100.0, extraction_confidence=LOW_CONFIDENCE_THRESHOLD - 0.1,
+        row_id="r",
+        instruction="renew",
+        renew_pct=8.0,
+        baseline_price=100.0,
+        extraction_confidence=LOW_CONFIDENCE_THRESHOLD - 0.1,
     )
     cm = compile_row(row, signed_by="cm")
     assert cm.route == "human_confirm"  # a guessed baseline is never negotiated

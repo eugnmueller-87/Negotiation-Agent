@@ -37,9 +37,7 @@ from negotiation_agent.packages import InfeasiblePackage, fill_package
 from negotiation_agent.strategy import adapt_threshold, choose_tactic
 from negotiation_agent.supplier_model import SupplierModel
 
-_OPENING_RATIONALE = (
-    "Opening with a logrolled package at target — establish the reference point."
-)
+_OPENING_RATIONALE = "Opening with a logrolled package at target — establish the reference point."
 
 
 class Outcome(enum.StrEnum):
@@ -155,9 +153,7 @@ class DealEngine:
         # append the supplier's offer to the history (adaptive opponent modelling reads it next
         # turn)
         if self.config.adaptive and incoming is not None:
-            nxt = nxt.model_copy(
-                update={"supplier_history": [*state.supplier_history, incoming]}
-            )
+            nxt = nxt.model_copy(update={"supplier_history": [*state.supplier_history, incoming]})
         # attach the strategy read (tactic + rationale + base threshold) for the human audit trail
         if self.config.adaptive:
             decision = self._annotate(decision, base_theta, recip, incoming, nxt.supplier_history)

@@ -36,8 +36,11 @@ class _FakeExtractor:
             return [], 10, 5
         quote = "sub-processors may be engaged by the Supplier as required to deliver the services"
         f = scan.LlmFinding(
-            category="gdpr", severity="low", title="No DPA present",
-            quote=quote, anchor_id=dpa.anchor_id,
+            category="gdpr",
+            severity="low",
+            title="No DPA present",
+            quote=quote,
+            anchor_id=dpa.anchor_id,
         )
         return [f], 100, 50
 
@@ -97,9 +100,7 @@ def test_scanned_pdf_fails_before_any_extraction(client, monkeypatch):
     doc.close()
     monkeypatch.setenv("PEITHO_FULL_TOKEN", FULL_TOKEN)
     monkeypatch.setattr(api, "extraction_client_factory", lambda: _ExplodingExtractor())
-    r = client.post(
-        "/dossier/scan", files=_upload(blank), headers={"X-Peitho-Full": FULL_TOKEN}
-    )
+    r = client.post("/dossier/scan", files=_upload(blank), headers={"X-Peitho-Full": FULL_TOKEN})
     assert r.status_code == 422 and r.json()["error"]["code"] == "no_text_layer"
 
 

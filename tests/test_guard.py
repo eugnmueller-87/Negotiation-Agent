@@ -94,8 +94,12 @@ def test_fallback_always_passes_its_own_guard(outcome):
     # the deterministic floor must be guard-clean by construction
     approved = {} if outcome == "ESCALATE" else APPROVED
     brief = MoveBrief(
-        outcome=outcome, is_opening=False, round_band="mid", pressure="reciprocity",
-        approved_numbers=approved, reason_tag="counter",
+        outcome=outcome,
+        is_opening=False,
+        round_band="mid",
+        pressure="reciprocity",
+        approved_numbers=approved,
+        reason_tag="counter",
     )
     for variant in range(3):
         msg = render_fallback(brief, variant=variant)

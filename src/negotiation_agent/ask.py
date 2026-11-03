@@ -95,9 +95,7 @@ def ask_opus(
     ) as stream:
         message = stream.get_final_message()
     answer = "".join(b.text for b in message.content if b.type == "text").strip()
-    logger.info(
-        "ask-opus in=%s out=%s", message.usage.input_tokens, message.usage.output_tokens
-    )
+    logger.info("ask-opus in=%s out=%s", message.usage.input_tokens, message.usage.output_tokens)
 
     # collect the anchor ids the model actually cited that exist in the material (validate, don't
     # trust) — the API/UI only links these

@@ -52,8 +52,15 @@ def test_adaptation_is_monotone_in_reciprocity():
 
 # ── tactic selection ─────────────────────────────────────────────────────────────
 def _tactic(**kw):
-    defaults = dict(is_opening=False, incoming_utility=0.6, adjusted_threshold=0.7,
-                    reservation=RES, reciprocity=0.3, supplier_held_terms=[], at_deadline=False)
+    defaults = dict(
+        is_opening=False,
+        incoming_utility=0.6,
+        adjusted_threshold=0.7,
+        reservation=RES,
+        reciprocity=0.3,
+        supplier_held_terms=[],
+        at_deadline=False,
+    )
     defaults.update(kw)
     return st.choose_tactic(**defaults)[0]
 

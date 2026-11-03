@@ -359,8 +359,12 @@ def dossier_ask(req: AskRequest, request: Request) -> JSONResponse:
     if not _full_mode(request):
         return JSONResponse(
             status_code=403,
-            content={"error": {"code": "full_mode_only", "message": "Ask-Opus is available in the "
-                     "full version only."}},
+            content={
+                "error": {
+                    "code": "full_mode_only",
+                    "message": "Ask-Opus is available in the full version only.",
+                }
+            },
         )
 
     from negotiation_agent.ask import ask_opus
@@ -375,8 +379,9 @@ def dossier_ask(req: AskRequest, request: Request) -> JSONResponse:
         logger.warning("ask-opus unavailable: %s", e)
         return JSONResponse(
             status_code=503,
-            content={"error": {"code": "ask_unavailable",
-                     "message": "Ask-Opus is not configured."}},
+            content={
+                "error": {"code": "ask_unavailable", "message": "Ask-Opus is not configured."}
+            },
         )
     return JSONResponse(content=result.model_dump(mode="json"))
 
@@ -952,9 +957,7 @@ def negotiate_resolve(req: ResolveRequest, request: Request) -> JSONResponse:
             409,
         )
 
-    category, register = _detect_context(
-        req.context, [t.raw_text for t in req.transcript.turns]
-    )
+    category, register = _detect_context(req.context, [t.raw_text for t in req.transcript.turns])
     corr = _correspondents_dict(req.correspondents, register)
 
     if req.action == "takeover":
@@ -1139,9 +1142,7 @@ class SimulateResponse(BaseModel):
     rows: list[SimulatedRowResult]
 
 
-def _terminate_row(
-    row: BatchRow, buyer_name: str, reasons: list[str]
-) -> SimulatedRowResult:
+def _terminate_row(row: BatchRow, buyer_name: str, reasons: list[str]) -> SimulatedRowResult:
     """Cancel instruction: 100% reuse of the /terminate spine (termination.py).
     Cost avoidance = one year of the row's spend, booked ONLY when the notice
     window is not already MISSED — a missed window is not avoidable cost."""
@@ -1202,9 +1203,7 @@ def _terminate_row(
     )
 
 
-def _negotiate_row(
-    index: int, row: BatchRow, compiled: CompiledMandate
-) -> SimulatedRowResult:
+def _negotiate_row(index: int, row: BatchRow, compiled: CompiledMandate) -> SimulatedRowResult:
     """One real engine-vs-bot negotiation, savings derived from the settled price."""
     from negotiation_agent.engine import DealEngine, EngineConfig
     from negotiation_agent.simulator.loop import run_negotiation

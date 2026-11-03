@@ -35,10 +35,18 @@ def _sim(client, rows, **over):
 
 
 def test_renew_savings_stay_inside_the_signed_band(client):
-    r = _sim(client, [{
-        "row_id": "r1", "instruction": "renew", "renew_pct": 10.0,
-        "baseline_price": 272.0, "annual_spend_eur": 250000.0,
-    }])
+    r = _sim(
+        client,
+        [
+            {
+                "row_id": "r1",
+                "instruction": "renew",
+                "renew_pct": 10.0,
+                "baseline_price": 272.0,
+                "annual_spend_eur": 250000.0,
+            }
+        ],
+    )
     assert r.status_code == 200, r.text
     row = r.json()["rows"][0]
     assert row["action"] == "negotiated" and row["method"] == "simulated"
@@ -52,8 +60,13 @@ def test_every_row_is_method_simulated(client):
     rows = [
         {"row_id": "a", "instruction": "renew", "renew_pct": 5.0, "baseline_price": 100.0},
         {"row_id": "b", "instruction": "cancel"},
-        {"row_id": "c", "instruction": "renew", "renew_pct": 5.0, "baseline_price": 50.0,
-         "extraction_confidence": 0.3},
+        {
+            "row_id": "c",
+            "instruction": "renew",
+            "renew_pct": 5.0,
+            "baseline_price": 50.0,
+            "extraction_confidence": 0.3,
+        },
     ]
     d = _sim(client, rows).json()
     assert d["method"] == "simulated"
@@ -72,10 +85,18 @@ def test_cancel_cost_avoidance_is_separate_and_gated(client):
 
 
 def test_low_confidence_row_is_queued_not_negotiated(client):
-    row = _sim(client, [{
-        "row_id": "q", "instruction": "renew", "renew_pct": 8.0,
-        "baseline_price": 100.0, "extraction_confidence": 0.4,
-    }]).json()["rows"][0]
+    row = _sim(
+        client,
+        [
+            {
+                "row_id": "q",
+                "instruction": "renew",
+                "renew_pct": 8.0,
+                "baseline_price": 100.0,
+                "extraction_confidence": 0.4,
+            }
+        ],
+    ).json()["rows"][0]
     assert row["action"] == "queued_human_confirm"
     assert row["saving_ratio"] is None and row["saved_eur"] is None
 
@@ -91,8 +112,10 @@ def test_no_baseline_is_utility_only(client):
 def test_row_cap_rejects_an_over_length_batch(client):
     # the row cap is enforced at the pydantic boundary (Field max_length = _PORTFOLIO_MAX_ROWS);
     # an over-length list is a 422 validation error, never run.
-    rows = [{"row_id": f"r{i}", "instruction": "renew", "renew_pct": 5.0, "baseline_price": 100.0}
-            for i in range(api._PORTFOLIO_MAX_ROWS + 1)]
+    rows = [
+        {"row_id": f"r{i}", "instruction": "renew", "renew_pct": 5.0, "baseline_price": 100.0}
+        for i in range(api._PORTFOLIO_MAX_ROWS + 1)
+    ]
     r = _sim(client, rows)
     assert r.status_code == 422
 
@@ -101,16 +124,26 @@ def test_oversized_body_413s_before_parse(client, monkeypatch):
     # the RAW-BYTE cap is the memory-amplification defense: it fires on body size BEFORE json.loads
     # / pydantic ever run, so a huge body can't materialise a multi-GB list first.
     monkeypatch.setattr(api, "_SIMULATE_MAX_BYTES", 2000)
-    rows = [{"row_id": f"r{i}", "instruction": "renew", "renew_pct": 5.0, "baseline_price": 100.0}
-            for i in range(50)]  # well over 2000 bytes of JSON
+    rows = [
+        {"row_id": f"r{i}", "instruction": "renew", "renew_pct": 5.0, "baseline_price": 100.0}
+        for i in range(50)
+    ]  # well over 2000 bytes of JSON
     r = _sim(client, rows)
     assert r.status_code == 413
     assert r.json()["error"]["code"] == "batch_too_large"
 
 
 def test_batch_is_deterministic(client):
-    rows = [{"row_id": f"r{i}", "instruction": "renew", "renew_pct": 7.0,
-             "baseline_price": 100.0 + i, "annual_spend_eur": 10000.0} for i in range(5)]
+    rows = [
+        {
+            "row_id": f"r{i}",
+            "instruction": "renew",
+            "renew_pct": 7.0,
+            "baseline_price": 100.0 + i,
+            "annual_spend_eur": 10000.0,
+        }
+        for i in range(5)
+    ]
     a = _sim(client, rows).json()
     api._rate_hits.clear()
     b = _sim(client, rows).json()
@@ -124,8 +157,16 @@ def test_cancel_rejects_renew_pct_at_the_boundary(client):
 
 def test_renew_row_rejects_contract_text(client):
     # contract_text is read only on the cancel path — a renew row carrying it is a 422 (strictness)
-    r = _sim(client, [{
-        "row_id": "r", "instruction": "renew", "renew_pct": 5.0,
-        "baseline_price": 100.0, "contract_text": "x" * 100,
-    }])
+    r = _sim(
+        client,
+        [
+            {
+                "row_id": "r",
+                "instruction": "renew",
+                "renew_pct": 5.0,
+                "baseline_price": 100.0,
+                "contract_text": "x" * 100,
+            }
+        ],
+    )
     assert r.status_code == 422

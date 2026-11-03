@@ -21,21 +21,42 @@ from negotiation_agent.supplier_model import SupplierModel
 @pytest.fixture
 def env() -> Envelope:
     return Envelope(
-        negotiation_id="t", version=1, signed_by="e", target_utility=0.9, reservation_utility=0.5,
+        negotiation_id="t",
+        version=1,
+        signed_by="e",
+        target_utility=0.9,
+        reservation_utility=0.5,
         terms=[
-            TermSpec(name="price", term_type=TermType.PRICE, direction=Direction.MINIMIZE,
-                     best=90, worst=110, weight=0.6),
-            TermSpec(name="payment_days", term_type=TermType.PAYMENT_DAYS,
-                     direction=Direction.MAXIMIZE, best=90, worst=30, weight=0.4),
+            TermSpec(
+                name="price",
+                term_type=TermType.PRICE,
+                direction=Direction.MINIMIZE,
+                best=90,
+                worst=110,
+                weight=0.6,
+            ),
+            TermSpec(
+                name="payment_days",
+                term_type=TermType.PAYMENT_DAYS,
+                direction=Direction.MAXIMIZE,
+                best=90,
+                worst=30,
+                weight=0.4,
+            ),
         ],
     )
 
 
 def _accepted(conceded, settled=0.7):
     return oc.NegotiationOutcome(
-        category="pkg", outcome="accepted", rounds=5, settled_utility=settled,
+        category="pkg",
+        outcome="accepted",
+        rounds=5,
+        settled_utility=settled,
         settled_term_utilities={"price": 0.6, "payment_days": 0.9},
-        conceded_terms=conceded, target_utility=0.9, reservation_utility=0.5,
+        conceded_terms=conceded,
+        target_utility=0.9,
+        reservation_utility=0.5,
     )
 
 
@@ -84,8 +105,13 @@ def test_typical_settled_utility_is_the_mean_of_accepted(env):
 def test_escalation_rate_counts_failures(env):
     history = [_accepted(["payment_days"]) for _ in range(4)]
     history += [
-        oc.NegotiationOutcome(category="pkg", outcome="escalated", rounds=8,
-                              target_utility=0.9, reservation_utility=0.5)
+        oc.NegotiationOutcome(
+            category="pkg",
+            outcome="escalated",
+            rounds=8,
+            target_utility=0.9,
+            reservation_utility=0.5,
+        )
         for _ in range(2)
     ]
     assert pr.learn_category_prior("pkg", history).escalation_rate == pytest.approx(2 / 6, abs=1e-3)
@@ -119,8 +145,15 @@ def test_store_round_trips(tmp_path):
 def test_store_load_category_filters(tmp_path):
     store = oc.OutcomeStore(tmp_path / "out.jsonl")
     store.append(_accepted(["payment_days"]))
-    store.append(oc.NegotiationOutcome(category="other", outcome="escalated", rounds=3,
-                                       target_utility=0.9, reservation_utility=0.5))
+    store.append(
+        oc.NegotiationOutcome(
+            category="other",
+            outcome="escalated",
+            rounds=3,
+            target_utility=0.9,
+            reservation_utility=0.5,
+        )
+    )
     assert len(store.load_category("pkg")) == 1
 
 

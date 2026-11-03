@@ -186,8 +186,10 @@ _TOTAL_NUM = "(" + _NUM + ")" + _NUM_END + _PER_UNIT_BAN
 _TOTAL_VALUE_RE = re.compile(
     r"\b(?:total|aggregate|annual)\b[^.\n]{0,30}?"
     r"\b(?:contract|subscription|order|deal)?\s*(?:value|fees?|spend)\b"
-    r"[^.\n]{0,20}?(?:€|eur|usd|\$)\s*" + _TOTAL_NUM
-    + r"|(?:€|eur|usd|\$)\s*" + _TOTAL_NUM
+    r"[^.\n]{0,20}?(?:€|eur|usd|\$)\s*"
+    + _TOTAL_NUM
+    + r"|(?:€|eur|usd|\$)\s*"
+    + _TOTAL_NUM
     + r"(?:(?!\b(?:adjust|index|increas|revis))[^.\n]){0,20}?"
     + r"\b(?:total|in total|per annum|per year|annually|for the (?:initial )?term)\b",
     re.I,
@@ -369,9 +371,7 @@ class RegexContractExtractor:
         def add(name: str, pattern: re.Pattern[str]) -> None:
             hit = find(pattern)
             if hit is not None:
-                terms.append(
-                    ExtractedTerm(name=name, value=hit[0], quote=hit[1], confidence=0.8)
-                )
+                terms.append(ExtractedTerm(name=name, value=hit[0], quote=hit[1], confidence=0.8))
 
         _MAX_PLAUSIBLE_UNIT_PRICE = 10_000.0
 

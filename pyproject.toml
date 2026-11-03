@@ -106,7 +106,7 @@ exclude = ['src/negotiation_agent/(api|llm)\.py']
 # The Anthropic SDK doesn't ship a stub mypy resolves here; ignore its missing
 # import in the web-extra job (the import is guarded and only runs with the extra).
 [[tool.mypy.overrides]]
-module = ["anthropic", "anthropic.*", "fitz"]
+module = ["anthropic", "anthropic.*", "fitz", "pypdf", "pypdf.*", "docx", "docx.*"]
 ignore_missing_imports = true
 
 [tool.ruff]

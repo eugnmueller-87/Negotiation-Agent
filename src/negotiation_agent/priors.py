@@ -100,7 +100,5 @@ def seed_supplier_model(envelope: Envelope, prior: CategoryPrior) -> SupplierMod
     """
     if not prior.confident or not prior.appetite_prior:
         return SupplierModel.uniform(envelope)
-    appetite = {
-        t.name: prior.appetite_prior.get(t.name, 0.5) for t in envelope.terms
-    }
+    appetite = {t.name: prior.appetite_prior.get(t.name, 0.5) for t in envelope.terms}
     return SupplierModel(appetite=appetite, source="default")

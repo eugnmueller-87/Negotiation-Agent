@@ -108,8 +108,11 @@ def test_full_token_reaches_the_ask_path(client, monkeypatch):
 
     monkeypatch.setenv("PEITHO_FULL_TOKEN", "tok")
     monkeypatch.setattr(
-        ask, "ask_opus", lambda q, b, e=None: ask.AskAnswer(answer="Capped at 3mo [p2-b0].",
-                                                            cited_anchors=["p2-b0"])
+        ask,
+        "ask_opus",
+        lambda q, b, e=None: ask.AskAnswer(
+            answer="Capped at 3mo [p2-b0].", cited_anchors=["p2-b0"]
+        ),
     )
     r = client.post("/dossier/ask", json={"question": "q"}, headers={"X-Peitho-Full": "tok"})
     assert r.status_code == 200 and "cited_anchors" in r.json()

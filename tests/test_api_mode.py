@@ -20,11 +20,20 @@ FULL_TOKEN = "full-secret-token"
 
 MANDATE = {
     "envelope": {
-        "negotiation_id": "n", "version": 1, "signed_by": "e",
-        "target_utility": 0.9, "reservation_utility": 0.6,
+        "negotiation_id": "n",
+        "version": 1,
+        "signed_by": "e",
+        "target_utility": 0.9,
+        "reservation_utility": 0.6,
         "terms": [
-            {"name": "price", "term_type": "price", "direction": "minimize",
-             "best": 92.0, "worst": 108.0, "weight": 1.0},
+            {
+                "name": "price",
+                "term_type": "price",
+                "direction": "minimize",
+                "best": 92.0,
+                "worst": 108.0,
+                "weight": 1.0,
+            },
         ],
     },
     "supplier_appetite": {"price": 0.15},
@@ -68,9 +77,9 @@ def test_open_in_demo_mode_never_calls_the_llm(client):
 
 
 def test_step_in_demo_mode_never_calls_the_llm(client):
-    signed = client.post(
-        "/negotiate/open", json={"mandate": MANDATE, "session_id": "s1"}
-    ).json()["signed_mandate"]
+    signed = client.post("/negotiate/open", json={"mandate": MANDATE, "session_id": "s1"}).json()[
+        "signed_mandate"
+    ]
     r = client.post(
         "/negotiate/step",
         json={

@@ -340,7 +340,10 @@ def extract_intelligence(text: str) -> ContractIntelligence:
         # regex date match is a confirmed document fact (verbatim span present)
         lifecycle = ContractLifecycle(
             expiration_date=DocumentGrounded(
-                value=raw, quote=m.group(0).strip(), source="regex", confidence=0.9,
+                value=raw,
+                quote=m.group(0).strip(),
+                source="regex",
+                confidence=0.9,
                 assurance="confirmed",
             )
         )
@@ -350,17 +353,22 @@ def extract_intelligence(text: str) -> ContractIntelligence:
     # left None (unknown), never a confirmed False. Only the LLM extractor asserts False.
     legal = LegalFlags(
         has_dpa=DocumentGrounded(value="true", quote="", source="regex", assurance="confirmed")
-        if _DPA_POS_RE.search(text) else None,
+        if _DPA_POS_RE.search(text)
+        else None,
         has_nda=DocumentGrounded(value="true", quote="", source="regex", assurance="confirmed")
-        if _NDA_POS_RE.search(text) else None,
+        if _NDA_POS_RE.search(text)
+        else None,
     )
 
     uoms = sorted({u.lower() for u in _UOM_RE.findall(text)})
 
     return ContractIntelligence(
-        extraction=extraction, lifecycle=lifecycle,
+        extraction=extraction,
+        lifecycle=lifecycle,
         legal=legal if (legal.has_dpa or legal.has_nda) else None,
-        units_of_measure=uoms, extractor_used="regex", warnings=warnings,
+        units_of_measure=uoms,
+        extractor_used="regex",
+        warnings=warnings,
     )
 
 
@@ -394,6 +402,10 @@ def prepare_intelligence(
     intel = extract_intelligence(contract_text)
     adjustments, blocked, reason = propose_adjustments(intel, brief, today=today)
     return IntelligenceResult(
-        intelligence=intel, brief=brief, adjustments=adjustments,
-        blocked=blocked, block_reason=reason, research_note=research_note,
+        intelligence=intel,
+        brief=brief,
+        adjustments=adjustments,
+        blocked=blocked,
+        block_reason=reason,
+        research_note=research_note,
     )

@@ -117,8 +117,7 @@ _SYSTEM = (
     "- Blocks marked CONTEXT-ONLY are shown for continuity; do NOT anchor findings there.\n"
     "- Propose severity honestly; a deterministic layer may raise it.\n"
     "- Return an empty findings list only if the contract genuinely triggers nothing on the "
-    "checklist.\n\n"
-    + checklist_prompt_block()
+    "checklist.\n\n" + checklist_prompt_block()
 )
 
 
@@ -157,7 +156,7 @@ class AnthropicExtractClient:
                 with self._client.messages.stream(
                     model=_EXTRACT_MODEL,
                     max_tokens=_MAX_TOKENS,
-                    tools=[_EXTRACT_TOOL],  # type: ignore[list-item]  # static schema dict
+                    tools=[_EXTRACT_TOOL],  # type: ignore[list-item,unused-ignore]  # static schema dict
                     tool_choice={"type": "tool", "name": "record_findings"},
                     system=_SYSTEM,
                     messages=[{"role": "user", "content": user}],

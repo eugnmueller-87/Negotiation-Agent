@@ -105,9 +105,7 @@ class MoveBrief(BaseModel):
         if self.moved_terms:
             m = self.moved_terms[0]
             held = (
-                self.held_terms[0].name.replace("_", " ")
-                if self.held_terms
-                else "our priorities"
+                self.held_terms[0].name.replace("_", " ") if self.held_terms else "our priorities"
             )
             return (
                 f"Conceding {m.name.replace('_', ' ')} ({m.from_display} → {m.to_display}) "
@@ -191,14 +189,21 @@ def build_move_brief(
 
     if decision.outcome is Outcome.ESCALATE:
         return MoveBrief(
-            outcome="ESCALATE", is_opening=False, round_band=band, pressure="handoff",
+            outcome="ESCALATE",
+            is_opening=False,
+            round_band=band,
+            pressure="handoff",
             reason_tag=reason_tag,
         )
 
     if decision.outcome is Outcome.ACCEPT:
         return MoveBrief(
-            outcome="ACCEPT", is_opening=False, round_band=band, pressure=pressure,
-            approved_numbers=dict(decision.approved_numbers), reason_tag=reason_tag,
+            outcome="ACCEPT",
+            is_opening=False,
+            round_band=band,
+            pressure=pressure,
+            approved_numbers=dict(decision.approved_numbers),
+            reason_tag=reason_tag,
         )
 
     # COUNTER — diff the new package against the INBOUND baseline.
@@ -276,7 +281,5 @@ def _buyer_satisfaction(envelope: Envelope, offer: Offer) -> list[SatisfactionNo
     notes: list[SatisfactionNote] = []
     for term in envelope.terms:
         v = term.value(offer.terms[term.name])
-        notes.append(
-            SatisfactionNote(name=term.name, status="close" if v >= 0.75 else "apart")
-        )
+        notes.append(SatisfactionNote(name=term.name, status="close" if v >= 0.75 else "apart"))
     return notes

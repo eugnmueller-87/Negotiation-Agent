@@ -241,9 +241,7 @@ def resolve_supplier_offer(
     return Offer(terms=clamped)
 
 
-def raw_offer_from_text(
-    envelope: Envelope, raw_text: str, prev_raw: Offer | None
-) -> Offer | None:
+def raw_offer_from_text(envelope: Envelope, raw_text: str, prev_raw: Offer | None) -> Offer | None:
     """The supplier's offer as they LITERALLY stated it — no envelope clamping.
 
     ``resolve_supplier_offer`` clamps a below-worst figure to the envelope's worst end so the

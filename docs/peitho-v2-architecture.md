@@ -124,12 +124,12 @@ offer at round 1, which is correct: round 0 was the buyer's move, not the suppli
 **The fold, canonical:**
 ```python
 engine = DealEngine(envelope, supplier_model, config)
-state  = NegotiationState()
-decision, state = engine.decide(state, None)          # round-0 anchor; sets last_counter
-for past in supplier_offers[:-1]:                      # prior supplier turns
-    decision, state = engine.decide(state, past)       # scored at threshold(1), (2), ...
-decision, state = engine.decide(state, supplier_offers[-1])   # THIS step's decision
-assert state.round_index == n_prior_counters(decision, supplier_offers)   # invariant guard
+state = NegotiationState()
+decision, state = engine.decide(state, None)  # round-0 anchor; sets last_counter
+for past in supplier_offers[:-1]:  # prior supplier turns
+    decision, state = engine.decide(state, past)  # scored at threshold(1), (2), ...
+decision, state = engine.decide(state, supplier_offers[-1])  # THIS step's decision
+assert state.round_index == n_prior_counters(decision, supplier_offers)  # invariant guard
 # `state` is discarded — fully re-derivable next call. Statelessness holds.
 ```
 Cost: ≤ ~36 pure `decide` calls per step at `max_rounds=6..8` — microseconds. Statelessness is free
