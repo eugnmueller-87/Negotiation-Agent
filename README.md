@@ -12,9 +12,9 @@ engine didn't approve**: a violating draft is rejected and redrafted server-side
 it's ever sent. Not "the AI negotiates for you" — the AI *drafts*, the engine *decides*,
 and the guarantee is mechanical, not a prompt.
 
-### ▶ Live demo — [web-production-a5b7b.up.railway.app](https://web-production-a5b7b.up.railway.app/)
+### ▶ Live demo: paused since November 2026
 
-Real Opus writing negotiation emails against the real engine, deployed. Click **Sign the
+Real Opus writing negotiation emails against the real engine, deployed until November 2026. Click **Sign the
 mandate → Auto-play** and watch it negotiate; open **"Why this move"** to see the engine's
 threshold/utility math and the guard rejecting a draft in real time.
 
@@ -62,7 +62,7 @@ code decides.** Here's the flow of a negotiation:
 
 ## Demos
 
-- **▶ [Live v2](https://web-production-a5b7b.up.railway.app/)** — the deployed app: real
+- **▶ Live v2 (paused since November 2026)** — the deployed app: real
   engine + real Opus/Haiku, contract intelligence, the visible guard. This is the one to open.
 - **[`demo/peitho-v2.html`](demo/peitho-v2.html)** — the same v2 UI (source); runs against
   the live backend when opened locally.
@@ -303,8 +303,8 @@ linear-additive utility model, which is what makes the audit replay exact.
 
 - **v0 — the deterministic core.** ✅ Envelope schema, engine, logrolling baseline,
   headless simulator, evals. Pure Python, CI-gated.
-- **v1 — a live LLM-drafted negotiation.** ✅ **Deployed** at
-  [web-production-a5b7b.up.railway.app](https://web-production-a5b7b.up.railway.app/).
+- **v1 — a live LLM-drafted negotiation.** ✅ **Deployed** on Railway
+  until November 2026.
   A stateless FastAPI backend ([`api.py`](src/negotiation_agent/api.py)): the real engine
   runs server-side, folds the transcript each turn, drafts with Opus (buyer) / Haiku
   (supplier), and enforces the **guard-with-redraft** loop
